@@ -1,5 +1,5 @@
 services:
-  mpc-bridge:
+  mcp-bridge:
     build:
       context: .
     container_name: mcp-bridge
