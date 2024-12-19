@@ -1,9 +1,11 @@
 mcp
 fastapi
+sse-starlette
 uvicorn
 pydantic
 pydantic-settings
 httpx
+httpx-sse
 lmos-openai-types @ git+https://github.com/LMOS-IO/LMOS-openai-types@pydantic-gen
 loguru
 deepmerge

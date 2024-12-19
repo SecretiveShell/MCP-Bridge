@@ -2,7 +2,12 @@ from fastapi import APIRouter
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 
-from openai_clients import client, completions, chat_completions
+from openai_clients import (
+    client,
+    completions,
+    chat_completions,
+    streaming_chat_completions,
+)
 
 from openapi_tags import Tag
 
@@ -22,7 +27,7 @@ async def openai_completions(request: CreateCompletionRequest):
 async def openai_chat_completions(request: CreateChatCompletionRequest):
     """Chat Completions endpoint"""
     if request.stream:
-        raise NotImplementedError("Streaming Chat Completion is not supported")
+        return await streaming_chat_completions(request)
     else:
         return await chat_completions(request)
 
