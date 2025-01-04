@@ -121,6 +121,8 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: pr/28
     - name: 'Build images'
       run: |
         RELEASE=${{ needs.build.outputs.new_tag }} \
