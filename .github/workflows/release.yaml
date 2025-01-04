@@ -51,7 +51,7 @@ jobs:
             git config --global user.email "gha@github.com"
             git config --global user.name "github robot"
             git commit -am "update package build version gha"
-            git push origin pr/28
+            git push origin main
 
     - name: Build a binary wheel and a source tarball
       run: uv build && uv publish
@@ -121,8 +121,6 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        ref: pr/28
     - name: 'Build images'
       run: |
         RELEASE=${{ needs.build.outputs.new_tag }} \
