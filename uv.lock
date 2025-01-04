@@ -174,8 +174,8 @@ wheels = [
 
 [[package]]
 name = "mcp-bridge"
-version = "0.1.0"
-source = { virtual = "." }
+version = "0.2.0rc2"
+source = { editable = "." }
 dependencies = [
     { name = "deepmerge" },
     { name = "fastapi" },
