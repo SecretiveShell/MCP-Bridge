@@ -104,7 +104,7 @@ jobs:
       # sigstore-produced signatures and certificates.
       run: >-
         gh release upload
-        '${{ needs.build.outputs.new_tag }}' ./**
+        '${{ needs.build.outputs.new_tag }}' ./*.tar.gz ./*.whl 
         --repo '${{ github.repository }}'
 
   push-store-image:
