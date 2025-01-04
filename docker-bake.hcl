@@ -4,7 +4,7 @@ variable "RELEASE" {
 }
 
 variable "REGISTRY" {
-    default = "ghcr.io/secretiveshell/mcp-bridge/"
+    default = "ghcr.io/secretiveshell/mcp-bridge"
 }
 
 group "default" {
@@ -14,7 +14,7 @@ group "default" {
 
 target "mcp-bridge" {
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}${target.mcp-bridge.name}:${RELEASE}"]
+  tags       = ["${REGISTRY}/${target.mcp-bridge.name}:${RELEASE}"]
   context    = "."
   labels = {
     "org.opencontainers.image.source" = "https://github.com/SecretiveShell/MCP-Bridge"
