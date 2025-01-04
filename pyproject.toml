@@ -32,3 +32,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.version]
 path = "mcp_bridge/__init__.py"
+
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/p/mcp-bridge"
+publish-url = "https://test.pypi.org/legacy/"
