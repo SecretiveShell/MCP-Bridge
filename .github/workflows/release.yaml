@@ -126,7 +126,6 @@ jobs:
     - name: 'Build images'
       run: |
         RELEASE=${{ needs.build.outputs.new_tag }} \
-        echo "RELEASE=$RELEASE"
         docker buildx bake mcp-bridge -f docker-bake.hcl --push
 
 
