@@ -80,13 +80,13 @@ jobs:
       uses: actions/download-artifact@v3
       with:
         name: python-package-distributions
-        path: dist/
+        path: .
     - name: Sign the dists with Sigstore
       uses: sigstore/gh-action-sigstore-python@v3.0.0
       with:
         inputs: >-
-          ./dist/*.tar.gz
-          ./dist/*.whl      
+          ./*.tar.gz
+          ./*.whl      
     - name: Create GitHub Release
       env:
         GITHUB_TOKEN: ${{ github.token }}
