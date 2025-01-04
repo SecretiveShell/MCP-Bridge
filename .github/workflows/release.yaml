@@ -95,7 +95,7 @@ jobs:
         gh release create
         '${{ needs.build.outputs.new_tag }}'
         --repo '${{ github.repository }}'
-        --notes ""
+        --generate-notes
     - name: Upload artifact signatures to GitHub Release
       env:
         GITHUB_TOKEN: ${{ github.token }}
