@@ -20,14 +20,7 @@ on:
             - rc
             - rev
             - post
-        test:
-          type: choice
-          description: 'Publish to TestPyPI'
-          required: false
-          options:
-            - true
-            - false
-          default: true
+
 jobs:
 
   build:
@@ -69,14 +62,13 @@ jobs:
 
   publish-to-testpypi:
     name: Publish Python 🐍 distribution 📦 to TestPyPI
-    if: github.event.inputs.test == true
     needs:
     - build
     runs-on: ubuntu-latest
 
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/<package-name>
+      url: https://test.pypi.org/p/mcp-bridge
 
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
@@ -92,36 +84,12 @@ jobs:
       with:
         repository-url: https://test.pypi.org/legacy/mcp-bridge
 
-  publish-to-pypi:
-    if: github.event.inputs.test == false
-    name: >-
-      Publish Python 🐍 distribution 📦 to PyPI
-    needs:
-    - build
-    runs-on: ubuntu-latest
-    environment:
-      name: release
-      url: https://pypi.org/p/mcp-bridge  # Replace <package-name> with your PyPI project name
-    permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
-
-    steps:
-    - name: Download all the dists
-      uses: actions/download-artifact@v3
-      with:
-        name: python-package-distributions
-        path: dist/
-    - name: Publish distribution 📦 to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        skip-existing: true
-
   github-release:
     name: >-
       Sign the Python 🐍 distribution 📦 with Sigstore
       and upload them to GitHub Release
     needs:
-    - publish-to-pypi
+    - publish-to-testpypi
     - build
     runs-on: ubuntu-latest
 
@@ -166,7 +134,8 @@ jobs:
     permissions: write-all
     runs-on: ubuntu-latest
     needs:
-      - build
+    - publish-to-pypi
+    - build
     steps:
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
@@ -181,3 +150,5 @@ jobs:
         RELEASE=${{ needs.build.outputs.new_tag }} \
         echo "RELEASE=$RELEASE"
         docker buildx bake mcp-bridge -f docker-bake.hcl --push
+
+
