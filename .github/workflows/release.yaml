@@ -20,11 +20,11 @@ on:
             - rc
             - rev
             - post
-      test:
-        type: choice
-        description: 'Publish to TestPyPI'
-        required: false
-        default: true
+        test:
+          type: choice
+          description: 'Publish to TestPyPI'
+          required: false
+          default: true
 jobs:
 
   build:
