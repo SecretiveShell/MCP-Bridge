@@ -30,6 +30,7 @@ jobs:
       new_tag: ${{ steps.set_var.outputs.new_tag }}
     permissions:
       contents: write  # IMPORTANT: mandatory for making GitHub Releases
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
