@@ -1,6 +1,6 @@
 [project]
 name = "mcp-bridge"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A middleware to provide an openAI compatible endpoint that can call MCP tools."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,3 +26,9 @@ dev = [
     "mypy>=1.14.0",
     "ruff>=0.8.4",
 ]
+[build-system]
+requires = [ "hatchling",]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "mcp_bridge/__init__.py"

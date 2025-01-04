@@ -15,7 +15,16 @@ on:
             - major
             - minor
             - patch
-
+            - alpha
+            - beta
+            - rc
+            - rev
+            - post
+      test:
+        type: boolean
+        description: 'Publish to TestPyPI'
+        required: false
+        default: true
 jobs:
 
   build:
@@ -35,26 +44,53 @@ jobs:
       run: >-
         python3 -m
         pip install
-        poetry
+        hatchling uv
         --user
     - name: update version tag in pyproject.toml
       id: set_var
-      run: |
-          poetry version ${{ github.event.inputs.version_bump }}
-          echo "new_tag=$(poetry version --short)" >> $GITHUB_OUTPUT
+      run: | 
+          hatchling version ${{ github.event.inputs.version_bump }}
+          echo "new_tag=$(hatchling version)" >> $GITHUB_OUTPUT
             git config --global user.email "gha@github.com"
             git config --global user.name "github robot"
             git commit -am "update package build version gha"
             git push origin main
 
     - name: Build a binary wheel and a source tarball
-      run: poetry build
+      run: uv build
     - name: Store the distribution packages
       uses: actions/upload-artifact@v3
       with:
         name: python-package-distributions
         path: dist/
+
+  publish-to-testpypi:
+    name: Publish Python 🐍 distribution 📦 to TestPyPI
+    if: github.event.inputs.test == true
+    needs:
+    - build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/<package-name>
+
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+
+    steps:
+    - name: Download all the dists
+      uses: actions/download-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+    - name: Publish distribution 📦 to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/mcp-bridge
+
   publish-to-pypi:
+    if: github.event.inputs.test == false
     name: >-
       Publish Python 🐍 distribution 📦 to PyPI
     needs:
@@ -62,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: release
-      url: https://pypi.org/p/MCP_Bridge  # Replace <package-name> with your PyPI project name
+      url: https://pypi.org/p/mcp-bridge  # Replace <package-name> with your PyPI project name
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
 
