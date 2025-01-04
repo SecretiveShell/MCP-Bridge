@@ -134,7 +134,7 @@ jobs:
     permissions: write-all
     runs-on: ubuntu-latest
     needs:
-    - publish-to-pypi
+    - publish-to-testpypi
     - build
     steps:
     - name: Login to GitHub Container Registry
