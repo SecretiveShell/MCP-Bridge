@@ -24,6 +24,9 @@ on:
           type: choice
           description: 'Publish to TestPyPI'
           required: false
+          options:
+            - true
+            - false
           default: true
 jobs:
 
