@@ -10,6 +10,7 @@
             "request": "launch",
             "django": true,
             "module": "mcp_bridge.main",
+            "pythonArgs": ["-Xutf8"]
         }
     ]
 }

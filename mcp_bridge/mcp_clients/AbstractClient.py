@@ -41,9 +41,13 @@ class GenericMcpClient(ABC):
             try:
                 await self._maintain_session()
             except FileNotFoundError as e:
-                logger.error(f"failed to maintain session for {self.name}: file {e.filename} not found.")
+                logger.error(
+                    f"failed to maintain session for {self.name}: file {e.filename} not found."
+                )
             except Exception as e:
-                logger.error(f"failed to maintain session for {self.name}: {type(e)} {e.args}")
+                logger.error(
+                    f"failed to maintain session for {self.name}: {type(e)} {e.args}"
+                )
 
             logger.debug(f"restarting session for {self.name}")
             await asyncio.sleep(0.5)
@@ -139,10 +143,11 @@ class GenericMcpClient(ABC):
         except asyncio.TimeoutError:
             if http_error:
                 raise HTTPException(
-                    status_code=500, detail=f"Could not connect to MCP server \"{self.name}\"." 
+                    status_code=500,
+                    detail=f'Could not connect to MCP server "{self.name}".',
                 )
 
-            raise TimeoutError(f"Could not connect to MCP server \"{self.name}\"." )
+            raise TimeoutError(f'Could not connect to MCP server "{self.name}".')
 
         assert self.session is not None, "Session is None"
 
