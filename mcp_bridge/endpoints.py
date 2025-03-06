@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from lmos_openai_types import CreateChatCompletionRequest, CreateCompletionRequest
 

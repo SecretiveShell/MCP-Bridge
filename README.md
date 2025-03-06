@@ -123,6 +123,26 @@ If you want to use the tools inside of [claude desktop](https://claude.ai/downlo
 
 To add new MCP servers, edit the config.json file.
 
+### API Key Authentication
+
+MCP-Bridge supports API key authentication to secure your server. To enable this feature, add an `api_key` field to your config.json file:
+
+```json
+{
+    "api_key": "your-secure-api-key-here"
+}
+```
+
+When making requests to the MCP-Bridge server, include the API key in the Authorization header as a Bearer token:
+
+```
+Authorization: Bearer your-secure-api-key-here
+```
+
+If the `api_key` field is empty or not present in the configuration, authentication will be skipped, allowing backward compatibility.
+
+### Full Configuration Example
+
 an example config.json file with most of the options explicitly set:
 
 ```json
@@ -162,7 +182,8 @@ an example config.json file with most of the options explicitly set:
     },
     "logging": {
         "log_level": "DEBUG"
-    }
+    },
+    "api_key": "your-secure-api-key-here"
 }
 ```
 
@@ -172,6 +193,7 @@ an example config.json file with most of the options explicitly set:
 | mcp_servers      | The MCP servers configuration      |
 | network          | uvicorn network configuration      |
 | logging          | The logging configuration          |
+| api_key          | API key for server authentication  |
 
 ## Support
 

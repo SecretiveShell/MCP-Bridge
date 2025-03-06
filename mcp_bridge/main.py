@@ -1,14 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from mcp_bridge.endpoints import router as endpointRouter
-from mcp_bridge.mcpManagement import router as mcpRouter
-from mcp_bridge.health import router as healthRouter
-from mcp_bridge.mcp_server import router as mcp_server_router
-from mcp_bridge.lifespan import lifespan
-from mcp_bridge.openapi_tags import tags_metadata
+from loguru import logger
+
 from mcp_bridge import __version__ as version
 from mcp_bridge.config import config
-from loguru import logger
+from mcp_bridge.routers import secure_router, public_router
+from mcp_bridge.lifespan import lifespan
+from mcp_bridge.openapi_tags import tags_metadata
+
 
 def create_app() -> FastAPI:
     """
@@ -21,6 +20,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         openapi_tags=tags_metadata,
     )
+
+    # show auth data
+    if config.security.auth.enabled:
+        logger.info("Authentication is enabled")
+    else:
+        logger.info("Authentication is disabled")
     
     # Add CORS middleware
     if config.security.CORS.enabled:
@@ -39,10 +44,8 @@ def create_app() -> FastAPI:
     else:
         logger.info("CORS middleware is disabled")
 
-    app.include_router(endpointRouter)
-    app.include_router(mcpRouter)
-    app.include_router(healthRouter)
-    app.include_router(mcp_server_router)
+    app.include_router(secure_router)
+    app.include_router(public_router)
 
     return app
 

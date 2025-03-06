@@ -24,14 +24,19 @@ class Logging(BaseModel):
 class SamplingModel(BaseModel):
     model: Annotated[str, Field(description="Name of the sampling model")]
 
-    intelligence: Annotated[float, Field(description="Intelligence of the sampling model")] = 0.5
+    intelligence: Annotated[
+        float, Field(description="Intelligence of the sampling model")
+    ] = 0.5
     cost: Annotated[float, Field(description="Cost of the sampling model")] = 0.5
     speed: Annotated[float, Field(description="Speed of the sampling model")] = 0.5
 
 
 class Sampling(BaseModel):
     timeout: Annotated[int, Field(description="Timeout for sampling requests")] = 10
-    models: Annotated[list[SamplingModel], Field(description="List of sampling models")] = []
+    models: Annotated[
+        list[SamplingModel], Field(description="List of sampling models")
+    ] = []
+
 
 class SSEMCPServer(BaseModel):
     # TODO: expand this once I find a good definition for this
@@ -57,10 +62,25 @@ class Cors(BaseModel):
     allow_headers: list[str] = Field(["*"], description="Allowed headers")
 
 
+class ApiKey(BaseModel):
+    key: str = Field(..., description="API key")
+    permissions: Literal["all"] = Field(
+        "all", description="API key permissions"
+    )  # TODO: Add support for other permissions
+
+
+class Auth(BaseModel):
+    enabled: bool = Field(False, description="Enable authentication")
+    api_keys: list[ApiKey] = Field([], description="API keys")
+
+
 class Security(BaseModel):
     CORS: Cors = Field(
-        default_factory=lambda: Cors.model_construct(),
-        description="CORS configuration"
+        default_factory=lambda: Cors.model_construct(), description="CORS configuration"
+    )
+    auth: Auth = Field(
+        default_factory=lambda: Auth.model_construct(),
+        description="Authentication configuration",
     )
 
 
