@@ -163,5 +163,6 @@ cython_debug/
 
 
 ## custom
+commands.md
 compose.yml
 config.json

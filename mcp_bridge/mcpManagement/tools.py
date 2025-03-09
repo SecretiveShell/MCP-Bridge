@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import APIRouter, HTTPException
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp.types import ListToolsResult, CallToolResult
@@ -18,7 +19,7 @@ async def get_tools() -> dict[str, ListToolsResult]:
 
 
 @router.post("/{tool_name}/call")
-async def call_tool(tool_name: str, arguments: dict[str, str] = {}) -> CallToolResult:
+async def call_tool(tool_name: str, arguments: dict[str, Any] = {}) -> CallToolResult:
     """Call a tool"""
 
     client = await ClientManager.get_client_from_tool(tool_name)

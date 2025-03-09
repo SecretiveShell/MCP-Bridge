@@ -39,6 +39,31 @@ class McpClientSession(
             read_timeout_seconds=read_timeout_seconds,
         )
 
+    async def __aenter__(self):
+        session = await super().__aenter__()
+        self._task_group.start_soon(self._consume_messages)
+        return session
+
+    async def _consume_messages(self):
+        try:
+            async for message in self.incoming_messages:
+                try:
+                    if isinstance(message, Exception):
+                        logger.error(f"Received exception in message stream: {message}")
+                    elif isinstance(message, RequestResponder):                        
+                        logger.debug(f"Received request: {message.request}")                        
+                    elif isinstance(message, types.ServerNotification):
+                        if isinstance(message.root, types.LoggingMessageNotification):
+                            logger.debug(f"Received notification from server: {message.root.params}")                        
+                        else:
+                            logger.debug(f"Received notification from server: {message}")                        
+                    else:
+                        logger.debug(f"Received notification: {message}")
+                except Exception as e:
+                    logger.exception(f"Error processing message: {e}")
+        except Exception as e:
+            logger.exception(f"Message consumer task failed: {e}")
+
     async def initialize(self) -> types.InitializeResult:
         result = await self.send_request(
             types.ClientRequest(

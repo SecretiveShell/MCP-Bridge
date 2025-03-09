@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import APIRouter, HTTPException
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp.types import ListPromptsResult, GetPromptResult
@@ -18,7 +19,7 @@ async def get_prompts() -> dict[str, ListPromptsResult]:
 
 
 @router.post("/{prompt_name}")
-async def get_prompt(prompt_name: str, args: dict[str, str] = {}) -> GetPromptResult:
+async def get_prompt(prompt_name: str, args: dict[str, Any] = {}) -> GetPromptResult:
     """Evaluate a prompt"""
 
     client = await ClientManager.get_client_from_prompt(prompt_name)

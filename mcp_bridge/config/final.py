@@ -57,6 +57,21 @@ class Network(BaseModel):
     port: int = Field(8000, description="Port of the network")
 
 
+class Cors(BaseModel):
+    enabled: bool = Field(True, description="Enable CORS")
+    allow_origins: list[str] = Field(["*"], description="Allowed origins")
+    allow_credentials: bool = Field(True, description="Allow credentials")
+    allow_methods: list[str] = Field(["*"], description="Allowed methods")
+    allow_headers: list[str] = Field(["*"], description="Allowed headers")
+
+
+class Security(BaseModel):
+    CORS: Cors = Field(
+        default_factory=lambda: Cors.model_construct(),
+        description="CORS configuration"
+    )
+
+
 class Settings(BaseSettings):
     inference_server: InferenceServer = Field(
         default_factory=lambda: InferenceServer.model_construct(),
@@ -80,6 +95,11 @@ class Settings(BaseSettings):
     network: Network = Field(
         default_factory=lambda: Network.model_construct(),
         description="network config",
+    )
+
+    security: Security = Field(
+        default_factory=lambda: Security.model_construct(),
+        description="security config",
     )
 
     model_config = SettingsConfigDict(
