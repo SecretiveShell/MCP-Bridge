@@ -40,7 +40,7 @@ class MCPClientManager:
             client = SseClient(name, server_config)  # type: ignore
             await client.start()
             return client
-        
+
         if isinstance(server_config, DockerMCPServer):
             client = DockerClient(name, server_config)
             await client.start()
@@ -56,7 +56,6 @@ class MCPClientManager:
 
     async def get_client_from_tool(self, tool: str):
         for name, client in self.get_clients():
-            
             # client cannot have tools if it is not connected
             if not client.session:
                 continue
@@ -71,7 +70,6 @@ class MCPClientManager:
 
     async def get_client_from_prompt(self, prompt: str):
         for name, client in self.get_clients():
-
             # client cannot have prompts if it is not connected
             if not client.session:
                 continue

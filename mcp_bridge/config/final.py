@@ -7,6 +7,9 @@ from mcpx.client.transports.docker import DockerMCPServer
 
 
 class InferenceServer(BaseModel):
+    type: Literal["openai", "openrouter", "gemini"] = Field(
+        "openai", description="Type of inference server"
+    )  # used to apply data mappers
     base_url: str = Field(
         default="http://localhost:11434/v1",
         description="Base URL of the inference server",
@@ -24,14 +27,19 @@ class Logging(BaseModel):
 class SamplingModel(BaseModel):
     model: Annotated[str, Field(description="Name of the sampling model")]
 
-    intelligence: Annotated[float, Field(description="Intelligence of the sampling model")] = 0.5
+    intelligence: Annotated[
+        float, Field(description="Intelligence of the sampling model")
+    ] = 0.5
     cost: Annotated[float, Field(description="Cost of the sampling model")] = 0.5
     speed: Annotated[float, Field(description="Speed of the sampling model")] = 0.5
 
 
 class Sampling(BaseModel):
     timeout: Annotated[int, Field(description="Timeout for sampling requests")] = 10
-    models: Annotated[list[SamplingModel], Field(description="List of sampling models")] = []
+    models: Annotated[
+        list[SamplingModel], Field(description="List of sampling models")
+    ] = []
+
 
 class SSEMCPServer(BaseModel):
     # TODO: expand this once I find a good definition for this
