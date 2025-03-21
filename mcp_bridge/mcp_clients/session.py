@@ -25,7 +25,6 @@ class McpClientSession(
         types.ServerNotification,
     ]
 ):
-
     def __init__(
         self,
         read_stream: MemoryObjectReceiveStream[types.JSONRPCMessage | Exception],
@@ -75,11 +74,11 @@ class McpClientSession(
                         capabilities=types.ClientCapabilities(
                             sampling=types.SamplingCapability(),
                             experimental=None,
-                            roots=types.RootsCapability(
-                                listChanged=True
-                            ),
+                            roots=types.RootsCapability(listChanged=True),
                         ),
-                        clientInfo=types.Implementation(name="MCP-Bridge", version=version),
+                        clientInfo=types.Implementation(
+                            name="MCP-Bridge", version=version
+                        ),
                     ),
                 )
             ),
@@ -273,9 +272,10 @@ class McpClientSession(
             client_response = types.ClientResult(**response.model_dump())
             await responder.respond(client_response)
 
-    async def sample(self, params: types.CreateMessageRequestParams) -> types.CreateMessageResult:
+    async def sample(
+        self, params: types.CreateMessageRequestParams
+    ) -> types.CreateMessageResult:
         logger.info("got sampling request from mcp server")
         resp = await handle_sampling_message(params)
         logger.info("finished sampling request from mcp server")
         return resp
-    

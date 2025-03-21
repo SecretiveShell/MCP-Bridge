@@ -9,6 +9,7 @@ from mcp_bridge.lifespan import lifespan
 from mcp_bridge.openapi_tags import tags_metadata
 
 
+
 def create_app() -> FastAPI:
     """
     Create and configure the FastAPI application.
@@ -49,11 +50,16 @@ def create_app() -> FastAPI:
 
     return app
 
+
 app = create_app()
+
 
 def run():
     import uvicorn
+    from mcp_bridge.config import config
+
     uvicorn.run(app, host=config.network.host, port=config.network.port)
+
 
 if __name__ == "__main__":
     run()

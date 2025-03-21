@@ -15,7 +15,7 @@ class Choice(BaseModel):
 
 
 class SSEData(BaseModel):
-    id: str
+    id: str = "default-id"
     object: str
     created: int
     model: str
