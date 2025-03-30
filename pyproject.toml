@@ -20,6 +20,12 @@ dependencies = [
     "uvicorn>=0.34.0",
 ]
 
+[project.optional-dependencies]
+agent = [
+    "boto3>=1.37.23",
+    "loguru>=0.7.3",
+]
+
 [tool.uv.sources]
 lmos-openai-types = { git = "https://github.com/LMOS-IO/LMOS-openai-types", rev = "pydantic-gen" }
 
@@ -29,6 +35,7 @@ dev = [
     "ruff>=0.8.4",
     "uv>=0.5.20",
 ]
+
 [build-system]
 requires = [ "hatchling",]
 build-backend = "hatchling.build"
@@ -38,3 +45,4 @@ path = "mcp_bridge/__init__.py"
 
 [project.scripts]
 mcp-bridge = "mcp_bridge.main:run"
+mcp-agent = "mcp_bridge.agent_worker:main"

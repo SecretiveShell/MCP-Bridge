@@ -1,0 +1,10 @@
+{
+    "task": "read my recent memory using mcp_my_apple_remembers tool. Tell me what you found.",
+    "model": "gpt-3.5-turbo",
+    "bedrock": true,
+    "system_prompt": "You are a helpful assistant that completes tasks using available tools. Use the tools provided to you to help complete the user's task.",
+    "verbose": true,
+    "max_iterations": 10,
+    "cross_region": true,
+    "region": "us-east-1"
+} 
