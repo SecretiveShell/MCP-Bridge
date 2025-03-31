@@ -83,6 +83,15 @@ class AgentWorker:
             )
         ]
     
+    async def shutdown(self):
+        """Shutdown all MCP clients"""
+        logger.info("Shutting down MCP clients...")
+        # Import here to avoid circular imports
+        from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+        # Shutdown all client sessions
+        await ClientManager.shutdown()
+        logger.info("All MCP clients shut down")
+    
     async def process_with_bedrock(self) -> Dict[str, Any]:
         """Process the task using AWS Bedrock"""
         if not BEDROCK_AVAILABLE:
@@ -224,7 +233,7 @@ class AgentWorker:
                         # Check for task completion
                         if self.is_task_complete(content):
                             logger.info("Task completed successfully.")
-                            break
+                            return self.messages  # Return immediately when task is complete
                         
                         # Check for tool calls
                         tool_calls = []
@@ -407,7 +416,7 @@ class AgentWorker:
                                     # Check for task completion
                                     if self.is_task_complete(message.content):
                                         logger.info("Task completed successfully.")
-                                        break
+                                        return self.messages  # Return immediately when task is complete
                         else:
                             logger.warning("No choices in response")
                     except Exception as e:
@@ -485,8 +494,13 @@ async def run_cli():
             region=region
         )
         
-        await worker.run_agent_loop()
-        return 0
+        try:
+            messages = await worker.run_agent_loop()
+            logger.info("Agent worker completed")
+            return 0
+        finally:
+            # Ensure clients are shut down even if there's an exception
+            await worker.shutdown()
         
     except FileNotFoundError as e:
         logger.error(f"Configuration file error: {str(e)}")
@@ -506,6 +520,9 @@ def main():
         sys.exit(exit_code)
     except KeyboardInterrupt:
         logger.info("Agent worker interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        logger.exception(f"Unexpected error in main: {e}")
         sys.exit(1)
 
 

@@ -49,7 +49,8 @@ class GenericMcpClient(ABC):
             await asyncio.sleep(0.5)
 
     async def start(self):
-        asyncio.create_task(self._session_maintainer())
+        self._task = asyncio.create_task(self._session_maintainer())
+        return self._task
 
     async def call_tool(
         self, name: str, arguments: dict, timeout: Optional[int] = None

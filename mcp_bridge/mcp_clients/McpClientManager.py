@@ -16,6 +16,7 @@ client_types = Union[StdioClient, SseClient, DockerClient]
 
 class MCPClientManager:
     clients: dict[str, client_types] = {}
+    _client_tasks = {}  # Store tasks for cleanup
 
     async def initialize(self):
         """Initialize the MCP Client Manager and start all clients"""
@@ -26,6 +27,27 @@ class MCPClientManager:
             self.clients[server_name] = await self.construct_client(
                 server_name, server_config
             )
+
+    async def shutdown(self):
+        """Shutdown all MCP clients and cancel their tasks"""
+        logger.log("DEBUG", "Shutting down all MCP clients")
+        
+        # Cancel all session maintainer tasks
+        for name, client in list(self.clients.items()):
+            if hasattr(client, "_task") and client._task is not None:
+                logger.log("DEBUG", f"Cancelling task for {name}")
+                client._task.cancel()
+                try:
+                    await client._task
+                except:
+                    pass  # Task was cancelled, ignore the exception
+                
+            # Clear client references
+            self.clients[name] = None
+        
+        # Clear the clients dictionary
+        self.clients.clear()
+        logger.log("DEBUG", "All MCP clients shut down")
 
     async def construct_client(self, name, server_config) -> client_types:
         logger.log("DEBUG", f"Constructing client for {server_config}")
