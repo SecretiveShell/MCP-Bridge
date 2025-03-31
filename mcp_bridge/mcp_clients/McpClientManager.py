@@ -74,22 +74,34 @@ class MCPClientManager:
         return self.clients[server_name]
 
     def get_clients(self):
+        logger.debug(f"Getting clients, total: {len(self.clients)}")
+        for name, client in self.clients.items():
+            session_status = "initialized" if client.session else "not initialized"
+            logger.debug(f"Client {name}: session {session_status}")
         return list(self.clients.items())
 
     async def get_client_from_tool(self, tool: str):
+        logger.debug(f"Looking for client with tool: {tool}")
         for name, client in self.get_clients():
             
             # client cannot have tools if it is not connected
             if not client.session:
+                logger.debug(f"Client {name} session is None, skipping")
                 continue
 
             try:
+                logger.debug(f"Calling list_tools on client {name}")
                 list_tools = await client.session.list_tools()
+                logger.debug(f"Client {name} has {len(list_tools.tools)} tools")
                 for client_tool in list_tools.tools:
+                    logger.debug(f"Client {name} has tool: {client_tool.name}")
                     if client_tool.name == tool:
+                        logger.debug(f"Found tool {tool} in client {name}")
                         return client
-            except McpError:
+            except McpError as e:
+                logger.error(f"Error listing tools for client {name}: {e}")
                 continue
+        logger.warning(f"No client found with tool: {tool}")
 
     async def get_client_from_prompt(self, prompt: str):
         for name, client in self.get_clients():
