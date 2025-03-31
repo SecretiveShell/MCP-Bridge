@@ -20,6 +20,9 @@ class MCPClientManager:
 
     async def initialize(self):
         """Initialize the MCP Client Manager and start all clients"""
+
+        logger.log("DEBUG", "Initializing MCP Client Manager")
+        
         for server_name, server_config in config.mcp_servers.items():
             self.clients[server_name] = await self.construct_client(
                 server_name, server_config
@@ -43,6 +46,7 @@ class MCPClientManager:
         self.clients.clear()
 
     async def construct_client(self, name, server_config) -> client_types:
+        logger.log("DEBUG", f"Constructing client for {server_config}")
         if isinstance(server_config, StdioServerParameters):
             client = StdioClient(name, server_config)
             await client.start()
@@ -82,7 +86,6 @@ class MCPClientManager:
             except McpError as e:
                 logger.error(f"Error listing tools for client {name}: {e}")
                 continue
-        logger.warning(f"No client found with tool: {tool}")
 
     async def get_client_from_prompt(self, prompt: str):
         for name, client in self.get_clients():
