@@ -74,10 +74,7 @@ class AgentWorker:
         """Shutdown all MCP clients"""
         logger.info("Shutting down MCP clients...")
         # Import here to avoid circular imports
-        from mcp_bridge.mcp_clients.McpClientManager import ClientManager
         import os
-
-        # Force exit the program
         os._exit(0)
     
     def is_task_complete(self, content: str) -> bool:
@@ -280,6 +277,18 @@ class AgentWorker:
                     if self.is_anthropic_model():
                         # Convert messages to Anthropic format
                         anthropic_messages = []
+                        
+                        # Create system prompt with caching for Anthropic
+                        system_prompt = None
+                        if self.system_prompt:
+                            system_prompt = [
+                                {
+                                    "type": "text",
+                                    "text": self.system_prompt,
+                                    "cache_control": {"type": "ephemeral"}
+                                }
+                            ]
+                        
                         for i, msg in enumerate(self.messages):
                             try:
                                 # Get the role safely
@@ -300,13 +309,13 @@ class AgentWorker:
                                 
                                 # Handle based on safely extracted values
                                 if msg_role == "system":
-                                    # Add system message to first user message for Claude
+                                    # Skip system messages, will use system parameter instead
                                     continue
-                                elif msg_role == "user" and not anthropic_messages:
-                                    # First user message gets the system prompt
+                                elif msg_role == "user":
+                                    # Handle user messages without prepending system prompt
                                     anthropic_messages.append({
                                         "role": "user",
-                                        "content": f"{self.system_prompt}\n\n{msg_content}"
+                                        "content": msg_content or ""
                                     })
                                 else:
                                     # Convert other message formats
@@ -358,7 +367,8 @@ class AgentWorker:
                         logger.info("Using Anthropic API")
                         response = await anthropic_chat_completions(
                             messages=anthropic_messages,
-                            model=self.model
+                            model=self.model,
+                            system=system_prompt
                         )
                         
                         if response and "choices" in response and len(response["choices"]) > 0:

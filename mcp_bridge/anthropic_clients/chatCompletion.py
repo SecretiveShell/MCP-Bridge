@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 import json
 from loguru import logger
 
@@ -12,9 +12,18 @@ async def anthropic_chat_completions(
     max_tokens: int = 1024,
     temperature: Optional[float] = None,
     top_p: Optional[float] = None,
+    system: Optional[Union[str, List[Dict[str, Any]]]] = None,
 ) -> Dict[str, Any]:
     """
     Perform chat completion using the Anthropic API with MCP tools.
+    
+    Args:
+        messages: List of message objects to send to the API
+        model: Model ID to use
+        max_tokens: Maximum number of tokens to generate
+        temperature: Sampling temperature (0-1)
+        top_p: Nucleus sampling parameter
+        system: System prompt as string or list of content blocks with caching controls
     """
     # Check if client is available
     if client is None:
@@ -45,6 +54,15 @@ async def anthropic_chat_completions(
         "max_tokens": max_tokens,
         "messages": messages,
     }
+    
+    # Add system prompt if provided
+    if system:
+        # If system is a string, convert it to a properly formatted system block
+        if isinstance(system, str):
+            params["system"] = system
+        else:
+            # System is already a list of content blocks with caching
+            params["system"] = system
     
     # Only add tools parameter if we have tools available
     if tools:
