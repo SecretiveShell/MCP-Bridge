@@ -126,7 +126,7 @@ class AgentWorker:
                             mime_type = part.mimeType
                         
                         # Save the image locally for inspection
-                        self.save_image_locally(image_data, mime_type)
+                        # self.save_image_locally(image_data, mime_type)
                         
                         return {
                             "type": "image",
@@ -144,7 +144,7 @@ class AgentWorker:
             if hasattr(part, "image") and part.image:
                 try:
                     image_data = part.image
-                    self.save_image_locally(image_data)
+                    # self.save_image_locally(image_data)
                     
                     return {
                         "type": "image",
@@ -164,7 +164,7 @@ class AgentWorker:
                     if key in part and isinstance(part[key], str) and len(part[key]) > 1000:
                         try:
                             image_data = part[key]
-                            self.save_image_locally(image_data)
+                            # self.save_image_locally(image_data)
                             
                             return {
                                 "type": "image",
