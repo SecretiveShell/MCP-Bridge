@@ -118,6 +118,161 @@ class AgentWorker:
         
         return " ".join(text_parts) if text_parts else "No text content in result"
     
+    async def extract_tool_result_image(self, result) -> Optional[Dict[str, Any]]:
+        """Extract image content from tool result if available"""
+        if not result or not hasattr(result, "content"):
+            return None
+        
+        # Try multiple approaches to find and extract the image
+        
+        # Approach 1: Look for ImageContent objects with data attribute
+        for part in result.content:
+            part_type_name = type(part).__name__
+            
+            # Check if this is an ImageContent object (by type name)
+            if part_type_name == "ImageContent" or hasattr(part, "type") and getattr(part, "type") == "image":
+                # Check for data attribute which contains the base64 image
+                if hasattr(part, "data"):
+                    try:
+                        # Get the image data and MIME type
+                        image_data = part.data
+                        mime_type = "image/png"  # Default
+                        if hasattr(part, "mimeType"):
+                            mime_type = part.mimeType
+                        
+                        # Save the image locally for inspection
+                        self.save_image_locally(image_data, mime_type)
+                        
+                        return {
+                            "type": "image",
+                            "source": {
+                                "type": "base64", 
+                                "media_type": mime_type,
+                                "data": image_data
+                            }
+                        }
+                    except Exception as e:
+                        logger.error(f"Error processing image data from ImageContent: {e}")
+        
+        # Approach 2: Look for direct image attribute (legacy approach)
+        for part in result.content:
+            if hasattr(part, "image") and part.image:
+                try:
+                    image_data = part.image
+                    self.save_image_locally(image_data)
+                    
+                    return {
+                        "type": "image",
+                        "source": {
+                            "type": "base64", 
+                            "media_type": "image/png",
+                            "data": image_data
+                        }
+                    }
+                except Exception as e:
+                    logger.error(f"Error processing image data from attribute: {e}")
+        
+        # Approach 3: Check if content parts are dictionaries with image-related keys
+        for part in result.content:
+            if isinstance(part, dict):
+                for key in ["image", "data"]:
+                    if key in part and isinstance(part[key], str) and len(part[key]) > 1000:
+                        try:
+                            image_data = part[key]
+                            self.save_image_locally(image_data)
+                            
+                            return {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64", 
+                                    "media_type": "image/png",
+                                    "data": image_data
+                                }
+                            }
+                        except Exception as e:
+                            logger.error(f"Error processing image data from dictionary: {e}")
+                
+        return None
+    
+    def save_image_locally(self, base64_data: str, mime_type: str = "image/png") -> None:
+        """Save base64 image data to a local file for inspection"""
+        import base64
+        import os
+        from datetime import datetime
+        
+        # Create a screenshots directory if it doesn't exist
+        screenshots_dir = "screenshots"
+        os.makedirs(screenshots_dir, exist_ok=True)
+        
+        # Determine file extension from MIME type
+        extension = "png"  # Default
+        if mime_type == "image/jpeg":
+            extension = "jpg"
+        elif mime_type == "image/gif":
+            extension = "gif"
+        elif mime_type == "image/webp":
+            extension = "webp"
+        
+        # Generate a filename with a timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = os.path.join(screenshots_dir, f"screenshot_{timestamp}.{extension}")
+        
+        try:
+            # Decode the base64 data
+            image_data = base64.b64decode(base64_data)
+            
+            # Write the image to a file
+            with open(filename, "wb") as f:
+                f.write(image_data)
+            
+            logger.info(f"Saved screenshot: {filename}")
+        except Exception as e:
+            logger.error(f"Error saving image: {e}")
+    
+    async def is_image_tool(self, tool_name: str) -> bool:
+        """Check if a tool is expected to return image data by examining its description or response type"""
+        # Known image tools - fallback if we can't determine from specs
+        known_image_tools = [
+            "remote_macos_get_screen", 
+            "mcp_remote_macos_get_screen",
+            "get_screen"
+        ]
+        
+        # Check if tool is known to return images
+        if tool_name.lower() in [t.lower() for t in known_image_tools]:
+            return True
+            
+        # Try to get the tool definition from MCP
+        try:
+            from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+            
+            # Get the client that has this tool
+            client = await ClientManager.get_client_from_tool(tool_name)
+            if client:
+                # Get the tool definition
+                tools_result = await client.list_tools()
+                if tools_result and hasattr(tools_result, "tools"):
+                    for tool in tools_result.tools:
+                        if tool.name == tool_name:
+                            # Check if the tool description mentions images or screenshots
+                            if hasattr(tool, "description") and tool.description:
+                                desc_lower = tool.description.lower()
+                                if any(term in desc_lower for term in ["image", "screenshot", "screen capture", "photo"]):
+                                    logger.debug(f"Tool {tool_name} identified as image tool from description")
+                                    return True
+                            
+                            # Check if the tool's response schema includes image types
+                            if hasattr(tool, "outputSchema") and tool.outputSchema:
+                                schema_str = str(tool.outputSchema).lower()
+                                if any(term in schema_str for term in ["image", "imagecontent", "screenshot", "base64"]):
+                                    logger.debug(f"Tool {tool_name} identified as image tool from output schema")
+                                    return True
+        except Exception as e:
+            logger.warning(f"Error checking if {tool_name} is an image tool: {e}")
+        
+        # Fallback to known tools list if we couldn't determine from specs
+        return False
+    
     def is_anthropic_model(self) -> bool:
         """Check if the model is an Anthropic model"""
         return self.model.startswith("claude-") or "claude" in self.model
@@ -315,7 +470,11 @@ class AgentWorker:
                                                 ]
                                             })
                                             continue
-                                            
+                                        
+                                        # Check if it's an image tool, but don't do anything special yet
+                                        # The actual image extraction will happen later
+                                        is_image_tool = await self.is_image_tool(tool_name)
+                                        
                                         result_text = await self.extract_tool_result_text(result)
                                         print(f"Tool Result: {result_text}")
                                         
@@ -349,16 +508,49 @@ class AgentWorker:
                                                 {"type": "tool_use", "id": tool_id, "name": tool_name, "input": tool_input}
                                             ]
                                         })
-                                        anthropic_messages.append({
-                                            "role": "user",
-                                            "content": [
-                                                {
-                                                    "type": "tool_result",
-                                                    "tool_use_id": tool_id,
-                                                    "content": result_text
-                                                }
-                                            ]
-                                        })
+                                        
+                                        # Check if this is an image tool and extract image if available
+                                        if is_image_tool:
+                                            image_content = await self.extract_tool_result_image(result)
+                                            if image_content:
+                                                # If we have image data, add it to the user message with tool result
+                                                anthropic_messages.append({
+                                                    "role": "user",
+                                                    "content": [
+                                                        {
+                                                            "type": "tool_result",
+                                                            "tool_use_id": tool_id,
+                                                            "content": result_text or "Here is the screenshot:"
+                                                        },
+                                                        image_content
+                                                    ]
+                                                })
+                                                logger.info(f"Added image from {tool_name} to message")
+                                            else:
+                                                # Fall back to text-only if no image was extracted
+                                                anthropic_messages.append({
+                                                    "role": "user",
+                                                    "content": [
+                                                        {
+                                                            "type": "tool_result",
+                                                            "tool_use_id": tool_id,
+                                                            "content": result_text
+                                                        }
+                                                    ]
+                                                })
+                                                logger.warning(f"No image found for {tool_name}, using text-only response")
+                                        else:
+                                            # Regular text-only tool result
+                                            anthropic_messages.append({
+                                                "role": "user",
+                                                "content": [
+                                                    {
+                                                        "type": "tool_result",
+                                                        "tool_use_id": tool_id,
+                                                        "content": result_text
+                                                    }
+                                                ]
+                                            })
                                     except Exception as e:
                                         logger.error(f"Error processing tool call: {e}")
                                         # Add an error message instead of a tool call
@@ -464,6 +656,17 @@ class AgentWorker:
                                                     tool_call_id=tool_id
                                                 )
                                                 self.messages.append(tool_result_message)
+                                                
+                                                # If this is an image tool, store the image data in a way that can be
+                                                # retrieved later by the anthropic formatter if needed
+                                                if await self.is_image_tool(tool_name):
+                                                    image_content = await self.extract_tool_result_image(result)
+                                                    if image_content:
+                                                        # Store the image data in the message's metadata for later use
+                                                        if not hasattr(tool_result_message, "metadata"):
+                                                            tool_result_message.metadata = {}
+                                                        tool_result_message.metadata["image_content"] = image_content
+                                                        logger.info(f"Stored image from {tool_name} in message metadata")
                                             except Exception as e:
                                                 error_message = f"Error executing tool {tool_name}: {str(e)}"
                                                 logger.error(error_message)

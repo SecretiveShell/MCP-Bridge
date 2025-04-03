@@ -8,15 +8,36 @@ from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2anthropic
 
 
-def format_tool_response_for_anthropic(tool_id: str, result_text: str) -> List[Dict[str, Any]]:
-    """Format tool response in the correct structure for Anthropic API"""
-    return [
-        {
-            "type": "tool_result",
-            "tool_use_id": tool_id,
-            "content": result_text
-        }
-    ]
+def format_tool_response_for_anthropic(tool_id: str, result_text: str, image_data: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """Format tool response in the correct structure for Anthropic API
+    
+    Args:
+        tool_id: The ID of the tool that was called
+        result_text: The text result from the tool call
+        image_data: Optional image data in Anthropic format if tool returned an image
+        
+    Returns:
+        List of content items for Anthropic message
+    """
+    if image_data:
+        # Return both the text result and image if available
+        return [
+            {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content": result_text
+            },
+            image_data
+        ]
+    else:
+        # Return only text result
+        return [
+            {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content": result_text
+            }
+        ]
 
 
 async def anthropic_get_tools() -> List[Dict[str, Any]]:
