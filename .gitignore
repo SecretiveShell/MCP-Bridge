@@ -171,3 +171,4 @@ screenshots/*
 .DS_Store
 
 .cursor
+agent_worker_task.json

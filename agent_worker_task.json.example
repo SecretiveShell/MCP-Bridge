@@ -1,0 +1,7 @@
+{
+    "task": "Hi Olivia, tell me what's on your computer screen. You should include a response of 'the task has been completed' when the task is complete. Don't ask for what to do next.",
+    "model": "claude-3-7-sonnet-20250219",
+    "system_prompt": "You should include a response of 'the task has been completed' when the task is complete.\n\n You should include a response of 'the task has been completed' when you found yourself stuck in a loop with no progress.",
+    "verbose": true,
+    "max_iterations": 10
+} 
