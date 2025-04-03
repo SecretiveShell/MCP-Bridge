@@ -145,9 +145,7 @@ async def anthropic_chat_completions(
                                     mime_type = "image/png"  # Default
                                     if hasattr(part, "mimeType"):
                                         mime_type = part.mimeType
-                                    
-                                    # Save the image locally for inspection
-                                    save_image_locally(image_data_raw, tool_name, mime_type)
+
                                     
                                     image_data = {
                                         "type": "image",
@@ -164,8 +162,6 @@ async def anthropic_chat_completions(
                         elif hasattr(part, "image") and part.image:
                             # Extract image data if available
                             try:
-                                # Save the image locally for inspection
-                                save_image_locally(part.image, tool_name)
                                 
                                 image_data = {
                                     "type": "image",
@@ -184,8 +180,6 @@ async def anthropic_chat_completions(
                             for key in ["image", "data"]:
                                 if hasattr(part, 'keys') and key in part and isinstance(part[key], str) and len(part[key]) > 1000:
                                     try:
-                                        # Save as a dictionary format
-                                        save_image_locally(part[key], tool_name)
                                         
                                         image_data = {
                                             "type": "image",
@@ -326,38 +320,3 @@ async def anthropic_chat_completions(
                 "total_tokens": 0
             }
         } 
-
-def save_image_locally(base64_data: str, tool_name: str, mime_type: str = "image/png") -> None:
-    """Save base64 image data to a local file for inspection"""
-    import base64
-    import os
-    from datetime import datetime
-    
-    # Create a screenshots directory if it doesn't exist
-    screenshots_dir = "screenshots"
-    os.makedirs(screenshots_dir, exist_ok=True)
-    
-    # Determine file extension from MIME type
-    extension = "png"  # Default
-    if mime_type == "image/jpeg":
-        extension = "jpg"
-    elif mime_type == "image/gif":
-        extension = "gif"
-    elif mime_type == "image/webp":
-        extension = "webp"
-    
-    # Generate a filename with a timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = os.path.join(screenshots_dir, f"{tool_name}_screenshot_{timestamp}.{extension}")
-    
-    try:
-        # Decode the base64 data
-        image_data = base64.b64decode(base64_data)
-        
-        # Write the image to a file
-        with open(filename, "wb") as f:
-            f.write(image_data)
-        
-        logger.info(f"Saved screenshot: {filename}")
-    except Exception as e:
-        logger.error(f"Error saving image: {e}") 
