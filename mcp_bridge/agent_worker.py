@@ -75,22 +75,10 @@ class AgentWorker:
         logger.info("Shutting down MCP clients...")
         # Import here to avoid circular imports
         from mcp_bridge.mcp_clients.McpClientManager import ClientManager
-        
-        try:
-            # Shutdown all client sessions
-            await ClientManager.shutdown()
-            # Wait a moment to ensure tasks are properly cancelled
-            await asyncio.sleep(0.5)
-            
-            # Force exit any remaining tasks by cancelling all remaining tasks
-            for task in asyncio.all_tasks():
-                if task is not asyncio.current_task():
-                    task.cancel()
-            
-            logger.info("All MCP clients shut down")
-        except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
-            # Still need to continue exiting
+        import os
+
+        # Force exit the program
+        os._exit(0)
     
     def is_task_complete(self, content: str) -> bool:
         """Check if the task is complete based on the assistant's response"""
