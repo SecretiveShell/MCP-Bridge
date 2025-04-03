@@ -169,3 +169,5 @@ config.json
 
 screenshots/*
 .DS_Store
+
+.cursor
