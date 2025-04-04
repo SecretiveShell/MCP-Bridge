@@ -10,6 +10,13 @@ from loguru import logger
 
 from mcp_bridge.openai_clients.chatCompletion import chat_completions
 from mcp_bridge.anthropic_clients.chatCompletion import anthropic_chat_completions
+from mcp_bridge.agent_worker.utils import (
+    extract_tool_result_text,
+    extract_tool_result_image,
+    is_image_tool,
+    is_anthropic_model,
+    is_task_complete
+)
 from lmos_openai_types import (
     CreateChatCompletionRequest,
     ChatCompletionRequestMessage,
@@ -77,157 +84,6 @@ class AgentWorker:
         import os
         os._exit(0)
     
-    def is_task_complete(self, content: str) -> bool:
-        """Check if the task is complete based on the assistant's response"""
-        completion_indicators = [
-            "i've completed the task",
-            "task is complete", 
-            "the task has been completed",
-            "i have completed", 
-            "task has been finished",
-            "the task is now finished"
-        ]
-        
-        content_lower = content.lower()
-        return any(indicator in content_lower for indicator in completion_indicators)
-    
-    async def extract_tool_result_text(self, result) -> str:
-        """Extract text content from tool result"""
-        if not result or not hasattr(result, "content"):
-            return "No result returned from tool"
-            
-        text_parts = []
-        for part in result.content:
-            if hasattr(part, "text"):
-                text_parts.append(part.text)
-        
-        return " ".join(text_parts) if text_parts else "No text content in result"
-    
-    async def extract_tool_result_image(self, result) -> Optional[Dict[str, Any]]:
-        """Extract image content from tool result if available"""
-        if not result or not hasattr(result, "content"):
-            return None
-        
-        # Try multiple approaches to find and extract the image
-        
-        # Approach 1: Look for ImageContent objects with data attribute
-        for part in result.content:
-            part_type_name = type(part).__name__
-            
-            # Check if this is an ImageContent object (by type name)
-            if part_type_name == "ImageContent" or hasattr(part, "type") and getattr(part, "type") == "image":
-                # Check for data attribute which contains the base64 image
-                if hasattr(part, "data"):
-                    try:
-                        # Get the image data and MIME type
-                        image_data = part.data
-                        mime_type = "image/png"  # Default
-                        if hasattr(part, "mimeType"):
-                            mime_type = part.mimeType
-                        
-                        # Save the image locally for inspection
-                        # self.save_image_locally(image_data, mime_type)
-                        
-                        return {
-                            "type": "image",
-                            "source": {
-                                "type": "base64", 
-                                "media_type": mime_type,
-                                "data": image_data
-                            }
-                        }
-                    except Exception as e:
-                        logger.error(f"Error processing image data from ImageContent: {e}")
-        
-        # Approach 2: Look for direct image attribute (legacy approach)
-        for part in result.content:
-            if hasattr(part, "image") and part.image:
-                try:
-                    image_data = part.image
-                    # self.save_image_locally(image_data)
-                    
-                    return {
-                        "type": "image",
-                        "source": {
-                            "type": "base64", 
-                            "media_type": "image/png",
-                            "data": image_data
-                        }
-                    }
-                except Exception as e:
-                    logger.error(f"Error processing image data from attribute: {e}")
-        
-        # Approach 3: Check if content parts are dictionaries with image-related keys
-        for part in result.content:
-            if isinstance(part, dict):
-                for key in ["image", "data"]:
-                    if key in part and isinstance(part[key], str) and len(part[key]) > 1000:
-                        try:
-                            image_data = part[key]
-                            # self.save_image_locally(image_data)
-                            
-                            return {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64", 
-                                    "media_type": "image/png",
-                                    "data": image_data
-                                }
-                            }
-                        except Exception as e:
-                            logger.error(f"Error processing image data from dictionary: {e}")
-                
-        return None
-    
-    
-    async def is_image_tool(self, tool_name: str) -> bool:
-        """Check if a tool is expected to return image data by examining its description or response type"""
-        # Known image tools - fallback if we can't determine from specs
-        known_image_tools = [
-            "remote_macos_get_screen", 
-            "mcp_remote_macos_get_screen",
-            "get_screen"
-        ]
-        
-        # Check if tool is known to return images
-        if tool_name.lower() in [t.lower() for t in known_image_tools]:
-            return True
-            
-        # Try to get the tool definition from MCP
-        try:
-            from mcp_bridge.mcp_clients.McpClientManager import ClientManager
-            
-            # Get the client that has this tool
-            client = await ClientManager.get_client_from_tool(tool_name)
-            if client:
-                # Get the tool definition
-                tools_result = await client.list_tools()
-                if tools_result and hasattr(tools_result, "tools"):
-                    for tool in tools_result.tools:
-                        if tool.name == tool_name:
-                            # Check if the tool description mentions images or screenshots
-                            if hasattr(tool, "description") and tool.description:
-                                desc_lower = tool.description.lower()
-                                if any(term in desc_lower for term in ["image", "screenshot", "screen capture", "photo"]):
-                                    logger.debug(f"Tool {tool_name} identified as image tool from description")
-                                    return True
-                            
-                            # Check if the tool's response schema includes image types
-                            if hasattr(tool, "outputSchema") and tool.outputSchema:
-                                schema_str = str(tool.outputSchema).lower()
-                                if any(term in schema_str for term in ["image", "imagecontent", "screenshot", "base64"]):
-                                    logger.debug(f"Tool {tool_name} identified as image tool from output schema")
-                                    return True
-        except Exception as e:
-            logger.warning(f"Error checking if {tool_name} is an image tool: {e}")
-        
-        # Fallback to known tools list if we couldn't determine from specs
-        return False
-    
-    def is_anthropic_model(self) -> bool:
-        """Check if the model is an Anthropic model"""
-        return self.model.startswith("claude-") or "claude" in self.model
-    
     async def run_agent_loop(self):
         """Run the agent loop to process the task until completion"""
         try:
@@ -240,7 +96,7 @@ class AgentWorker:
                 
                 try:
                     # Process with either Anthropic or OpenAI API based on model name
-                    if self.is_anthropic_model():
+                    if is_anthropic_model(self.model):
                         # Convert messages to Anthropic format
                         anthropic_messages = []
                         
@@ -437,9 +293,9 @@ class AgentWorker:
                                         
                                         # Check if it's an image tool, but don't do anything special yet
                                         # The actual image extraction will happen later
-                                        is_image_tool = await self.is_image_tool(tool_name)
+                                        is_tool_image = await is_image_tool(tool_name)
                                         
-                                        result_text = await self.extract_tool_result_text(result)
+                                        result_text = await extract_tool_result_text(result)
                                         print(f"Tool Result: {result_text}")
                                         
                                         # Add assistant message with tool call
@@ -474,8 +330,8 @@ class AgentWorker:
                                         })
                                         
                                         # Check if this is an image tool and extract image if available
-                                        if is_image_tool:
-                                            image_content = await self.extract_tool_result_image(result)
+                                        if is_tool_image:
+                                            image_content = await extract_tool_result_image(result)
                                             if image_content:
                                                 # If we have image data, add it to the user message with tool result
                                                 anthropic_messages.append({
@@ -543,7 +399,7 @@ class AgentWorker:
                             print(f"\nAssistant: {message_content}")
                             
                             # Check for task completion
-                            if self.is_task_complete(message_content):
+                            if is_task_complete(message_content):
                                 logger.info("Task completed successfully.")
                                 return self.messages
                         else:
@@ -610,7 +466,7 @@ class AgentWorker:
                                             try:
                                                 # Call the tool
                                                 result = await session.function_call(tool_name, tool_args)
-                                                result_text = await self.extract_tool_result_text(result)
+                                                result_text = await extract_tool_result_text(result)
                                                 print(f"Tool Result: {result_text}")
                                                 
                                                 # Add tool result message
@@ -623,8 +479,8 @@ class AgentWorker:
                                                 
                                                 # If this is an image tool, store the image data in a way that can be
                                                 # retrieved later by the anthropic formatter if needed
-                                                if await self.is_image_tool(tool_name):
-                                                    image_content = await self.extract_tool_result_image(result)
+                                                if await is_image_tool(tool_name):
+                                                    image_content = await extract_tool_result_image(result)
                                                     if image_content:
                                                         # Store the image data in the message's metadata for later use
                                                         if not hasattr(tool_result_message, "metadata"):
@@ -659,7 +515,7 @@ class AgentWorker:
                                     print(f"\nAssistant: {message.content}")
                                     
                                     # Check for task completion
-                                    if self.is_task_complete(message.content):
+                                    if is_task_complete(message.content):
                                         logger.info("Task completed successfully.")
                                         return self.messages  # Return immediately when task is complete
                         else:
@@ -684,97 +540,3 @@ class AgentWorker:
             logger.exception(f"Error in agent loop: {str(e)}")
             raise
 
-
-def load_config_from_file(config_file: str = "agent_worker_task.json") -> Dict[str, Any]:
-    """Load configuration from JSON file"""
-    try:
-        config_path = os.path.join(os.getcwd(), config_file)
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-            
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-            
-        # Ensure required fields are present
-        if 'task' not in config:
-            raise ValueError("Missing required field 'task' in config file")
-            
-        return config
-    except Exception as e:
-        logger.error(f"Error loading config file: {str(e)}")
-        raise
-
-
-async def run_cli():
-    """Run the CLI interface for the agent worker"""
-    worker = None
-    try:
-        # Load configuration from file
-        config = load_config_from_file()
-        
-        # Set default values if not in config
-        task = config['task']
-        model = config.get('model', "anthropic.claude-3-haiku-20240307-v1:0")
-        system_prompt = config.get('system_prompt')
-        verbose = config.get('verbose', False)
-        max_iterations = config.get('max_iterations', 10)
-        
-        # Configure logging
-        log_level = "DEBUG" if verbose else "INFO"
-        logger.remove()
-        logger.add(sys.stderr, level=log_level)
-        
-        logger.info(f"Starting MCP-Bridge Agent Worker with task: {task}")
-        
-        # Create and run the agent worker
-        worker = AgentWorker(
-            task=task,
-            model=model,
-            system_prompt=system_prompt,
-            max_iterations=max_iterations,
-        )
-        
-        messages = await worker.run_agent_loop()
-        logger.info("Agent worker completed")
-        return 0
-    except FileNotFoundError as e:
-        logger.error(f"Configuration file error: {str(e)}")
-        return 1
-    except KeyboardInterrupt:
-        logger.info("Agent worker interrupted by user")
-        return 1
-    except Exception as e:
-        logger.exception(f"Error running agent worker: {e}")
-        return 1
-    finally:
-        # Ensure clients are shut down even if there's an exception
-        if worker:
-            await worker.shutdown()
-            
-        # Force exit any remaining tasks 
-        remaining_tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-        if remaining_tasks:
-            logger.info(f"Cancelling {len(remaining_tasks)} remaining tasks")
-            for task in remaining_tasks:
-                task.cancel()
-            
-            # Wait briefly for tasks to be cancelled
-            await asyncio.wait(remaining_tasks, timeout=1.0)
-
-
-def main():
-    """Entry point for the CLI"""
-    try:
-        exit_code = asyncio.run(run_cli())
-        # Force program to exit immediately
-        os._exit(exit_code)
-    except KeyboardInterrupt:
-        logger.info("Agent worker interrupted by user")
-        os._exit(1)
-    except Exception as e:
-        logger.exception(f"Unexpected error in main: {e}")
-        os._exit(1)
-
-
-if __name__ == "__main__":
-    main() 
