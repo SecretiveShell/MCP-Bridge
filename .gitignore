@@ -172,3 +172,4 @@ screenshots/*
 
 .cursor
 agent_worker_task.json
+logs

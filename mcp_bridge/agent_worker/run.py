@@ -5,6 +5,7 @@ import asyncio
 import json
 import sys
 import os
+import uuid
 from typing import Dict, Any
 from loguru import logger
 from agent_worker import AgentWorker
@@ -48,7 +49,16 @@ async def run_cli():
         logger.remove()
         logger.add(sys.stderr, level=log_level)
         
+        # Create logs directory for customer logs
+        logs_dir = config.get('logs_dir', "logs/customer")
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # Generate a session ID for this run
+        session_id = config.get('session_id', str(uuid.uuid4()))
+        
         logger.info(f"Starting MCP-Bridge Agent Worker with task: {task}")
+        logger.info(f"Using session ID: {session_id}")
+        logger.info(f"Customer logs will be stored in: {logs_dir}")
         
         # Create and run the agent worker
         worker = AgentWorker(
@@ -56,10 +66,12 @@ async def run_cli():
             model=model,
             system_prompt=system_prompt,
             max_iterations=max_iterations,
+            session_id=session_id,
         )
         
         messages = await worker.run_agent_loop()
         logger.info("Agent worker completed")
+        logger.info(f"Check customer logs in {logs_dir}")
         return 0
     except FileNotFoundError as e:
         logger.error(f"Configuration file error: {str(e)}")

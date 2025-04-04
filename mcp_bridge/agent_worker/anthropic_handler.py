@@ -22,19 +22,23 @@ async def process_with_anthropic(
     messages: List[ChatCompletionRequestMessage],
     model: str,
     system_prompt: Optional[str] = None,
-    thinking_blocks: Optional[List[Dict[str, Any]]] = None
-) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], bool]:
+    thinking_blocks: Optional[List[Dict[str, Any]]] = None,
+    customer_logger: Optional[Any] = None
+) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], List[Dict[str, Any]], bool]:
     """Process a single iteration with Anthropic API
     
     Args:
         messages: The current conversation history
         model: The model name to use
         system_prompt: Optional system prompt
+        thinking_blocks: Previous thinking blocks for context
+        customer_logger: Optional customer message logger
         
     Returns:
         Tuple containing:
             - the updated anthropic_messages
             - the updated conversation history
+            - the updated thinking blocks
             - a boolean indicating if task is complete
     """
     # Convert messages to Anthropic format
@@ -46,6 +50,12 @@ async def process_with_anthropic(
     
     # Call Anthropic API
     logger.info("Using Anthropic API")
+    if customer_logger:
+        customer_logger.log_system_event("api_call", {
+            "provider": "anthropic",
+            "model": model
+        })
+        
     response = await anthropic_chat_completions(
         messages=anthropic_messages,
         model=model,
@@ -55,40 +65,53 @@ async def process_with_anthropic(
         thinking_blocks=thinking_blocks
     )
     
-    if not response or "choices" not in response or not response["choices"]:
-        logger.warning("No choices in Anthropic response")
-        # log important details without the raw message content, in one line
-        logger.info(f"Received response with {len(thinking_blocks)} thinking blocks, {len(anthropic_messages)} messages, {len(updated_messages)} updated messages, is_complete: {is_complete}")
-        return anthropic_messages, updated_messages, thinking_blocks, False
-    
-    choice = response["choices"][0]
-    message_data = choice["message"]
-    finish_reason = choice["finish_reason"]
-    
-    # Get original content if available
-    content_items = response.get("content", [])
-    
-    # Process any tool calls
-    tool_calls = _extract_tool_calls(content_items)
-    
-    if tool_calls and finish_reason == "tool_use":
-        logger.info("Anthropic model wants to use tools")
-        print(f"\nAssistant wants to use tools:")
+    # Process different types of responses (tool calls, text, etc.)
+    if 'choices' in response:
+        # Extract thinking blocks if available
+        new_thinking_blocks = response.get('thinking_blocks', [])
         
-        # Process tool calls and update messages
-        anthropic_messages, updated_messages = await _process_tool_calls(
-            tool_calls, anthropic_messages, updated_messages
-        )
+        # Process based on stop reason
+        finish_reason = response['choices'][0]['finish_reason']
         
-        # Tool calls were processed, return to continue the loop
-        return anthropic_messages, updated_messages, False
-
-    new_thinking_blocks = response.get("thinking_blocks", [])
-    thinking_blocks.extend(new_thinking_blocks)
-    # Handle regular text response
-    return await _process_text_response(
-        message_data, anthropic_messages, updated_messages, thinking_blocks
-    )
+        if finish_reason == 'tool_use' and 'content' in response:
+            # Handle tool calls
+            logger.info("Processing tool calls from response")
+            if customer_logger:
+                customer_logger.log_system_event("tool_use", {
+                    "content_items": len(response['content'])
+                })
+                
+            # Process the tool calls and get updated messages
+            anthropic_messages, updated_messages, new_thinking_blocks, is_complete = await _process_tool_calls_response(
+                response, 
+                anthropic_messages, 
+                updated_messages, 
+                thinking_blocks,
+                customer_logger
+            )
+            return anthropic_messages, updated_messages, new_thinking_blocks, is_complete
+        else:
+            # Handle regular text response
+            logger.info("Processing text response")
+            if customer_logger:
+                message_content = response['choices'][0]['message']['content']
+                customer_logger.log_message("assistant", message_content)
+                
+            return await _process_text_response(
+                response['choices'][0]['message'], 
+                anthropic_messages, 
+                updated_messages, 
+                new_thinking_blocks
+            )
+    else:
+        # Handle error response
+        logger.error("Invalid response format")
+        if customer_logger:
+            customer_logger.log_system_event("error", {
+                "message": "Invalid response format from Anthropic API",
+            })
+        # Return original messages, no completion
+        return anthropic_messages, updated_messages, [], False
 
 
 def _convert_messages_to_anthropic_format(
@@ -198,235 +221,142 @@ def _extract_tool_calls(content_items: List[Any]) -> List[Dict[str, Any]]:
     return tool_calls
 
 
-async def _process_tool_calls(
-    tool_calls: List[Dict[str, Any]],
+async def _process_tool_calls_response(
+    response: Dict[str, Any],
     anthropic_messages: List[Dict[str, Any]],
-    updated_messages: List[ChatCompletionRequestMessage]
-) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage]]:
-    """Process all tool calls and update messages"""
-    # Import ClientManager inside the function only when needed
-    from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+    updated_messages: List[ChatCompletionRequestMessage],
+    thinking_blocks: List[Dict[str, Any]],
+    customer_logger: Optional[Any] = None
+) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], List[Dict[str, Any]], bool]:
+    """Process a response that contains tool calls"""
+    content_items = response.get('content', [])
     
-    # Process each tool call
-    for tool_call in tool_calls:
-        try:
-            # Get tool properties safely
-            if isinstance(tool_call, dict):
-                tool_name = tool_call.get("name", "")
-                tool_input = tool_call.get("input", {})
-                tool_id = tool_call.get("id", "")
-            else:
-                tool_name = getattr(tool_call, "name", "")
-                tool_input = getattr(tool_call, "input", {})
-                tool_id = getattr(tool_call, "id", "")
+    # Find tool use blocks in the content
+    for item in content_items:
+        if hasattr(item, 'type') and item.type == 'tool_use':
+            tool_name = item.name
+            tool_input = item.input
+            tool_id = item.id
             
-            # Sanitize tool name
-            tool_name = _sanitize_tool_name(tool_name)
+            logger.info(f"Processing tool call: {tool_name}")
             
-            logger.info(f"Calling tool: {tool_name}")
-            print(f"\nTool Call: {tool_name}")
-            print(f"Arguments: {json.dumps(tool_input, indent=2)}")
+            if customer_logger:
+                customer_logger.log_tool_call(tool_name, tool_input, tool_id)
             
-            # Handle the tool call and update messages
-            anthropic_messages, updated_messages = await _handle_tool_call(
-                tool_name, tool_input, tool_id, anthropic_messages, updated_messages
+            # Create assistant message with tool call
+            assistant_message = ChatCompletionRequestMessage(
+                role="assistant",
+                content=f"I'll use the {tool_name} tool to help with this."
             )
+            updated_messages.append(assistant_message)
             
-        except Exception as e:
-            logger.error(f"Error processing tool call: {e}")
-            # Add an error message instead of a tool call
-            error_message = ChatCompletionRequestMessage(
-                role="user",
-                content=f"There was an error processing the tool call: {str(e)}. Please try a different approach."
+            # Call the tool
+            tool_result = await call_tool(tool_name, tool_input)
+            
+            if tool_result is None:
+                error_message = f"Error: Tool {tool_name} call failed."
+                logger.error(error_message)
+                
+                if customer_logger:
+                    customer_logger.log_tool_result(tool_id, error_message)
+                
+                # Add error message as tool result
+                tool_result_message = ChatCompletionRequestMessage(
+                    role="tool",
+                    content=error_message,
+                    tool_call_id=tool_id
+                )
+                updated_messages.append(tool_result_message)
+                continue
+            
+            # Process tool result to handle text and images
+            result_text = extract_tool_result_text(tool_result)
+            
+            # Check if this is an image-generating tool
+            has_image = is_image_tool(tool_name) and extract_tool_result_image(tool_result) is not None
+            
+            if customer_logger:
+                customer_logger.log_tool_result(tool_id, result_text, has_image)
+            
+            # Add tool result to messages
+            tool_result_message = ChatCompletionRequestMessage(
+                role="tool",
+                content=result_text,
+                tool_call_id=tool_id
             )
-            updated_messages.append(error_message)
-            anthropic_messages.append({
-                "role": "user",
-                "content": f"There was an error processing the tool call: {str(e)}. Please try a different approach."
-            })
+            updated_messages.append(tool_result_message)
     
-    return anthropic_messages, updated_messages
-
-
-def _sanitize_tool_name(tool_name: str) -> str:
-    """Sanitize tool name to remove invalid characters"""
-    if "." in tool_name or not all(c.isalnum() or c in "_-" for c in tool_name):
-        logger.warning(f"Sanitizing tool name: {tool_name}")
-        if "." in tool_name:
-            tool_name = tool_name.split(".")[-1]
-        tool_name = "".join(c if (c.isalnum() or c in "_-") else "_" for c in tool_name)
-    return tool_name
-
-
-async def _handle_tool_call(
-    tool_name: str,
-    tool_input: Dict[str, Any],
-    tool_id: str,
-    anthropic_messages: List[Dict[str, Any]],
-    updated_messages: List[ChatCompletionRequestMessage]
-) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage]]:
-    """Handle a single tool call and update messages"""
-    # Call the tool using the utility
-    result = await call_tool(tool_name, tool_input)
-    
-    if result is None:
-        return await _handle_failed_tool_call(
-            tool_name, tool_input, tool_id, anthropic_messages, updated_messages
-        )
-    
-    # Check if it's an image tool
-    is_tool_image = await is_image_tool(tool_name)
-    
-    result_text = await extract_tool_result_text(result)
-    print(f"Tool Result: {result_text}")
-    
-    # Add assistant message with tool call
-    tool_call_msg = ChatCompletionRequestMessage(
-        role="assistant",
-        content=None,
-        tool_calls=[{
-            "id": tool_id,
-            "type": "function",
-            "function": {
-                "name": tool_name,
-                "arguments": json.dumps(tool_input)
-            }
-        }]
+    # Make a follow-up API call with the tool results
+    follow_up_response = await _make_follow_up_api_call(
+        anthropic_messages, 
+        updated_messages, 
+        thinking_blocks,
+        response,
+        customer_logger
     )
-    updated_messages.append(tool_call_msg)
     
-    # Add tool result message
-    tool_result_message = ChatCompletionRequestMessage(
-        role="tool",
-        content=result_text,
-        tool_call_id=tool_id
-    )
-    updated_messages.append(tool_result_message)
-    
-    # Also update anthropic_messages for continuity
-    anthropic_messages.append({
-        "role": "assistant",
-        "content": [
-            {"type": "tool_use", "id": tool_id, "name": tool_name, "input": tool_input}
-        ]
-    })
-    
-    # Process tool result based on type (image or text)
-    return await _process_tool_result(
-        tool_name, tool_id, result, result_text, is_tool_image, 
-        anthropic_messages, updated_messages
-    )
-
-
-async def _handle_failed_tool_call(
-    tool_name: str,
-    tool_input: Dict[str, Any],
-    tool_id: str,
-    anthropic_messages: List[Dict[str, Any]],
-    updated_messages: List[ChatCompletionRequestMessage]
-) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage]]:
-    """Handle a tool call that failed"""
-    error_message = f"Tool {tool_name} not found or call failed"
-    logger.error(error_message)
-    
-    # Create a placeholder tool call
-    tool_call_msg = ChatCompletionRequestMessage(
-        role="assistant",
-        content=None,
-        tool_calls=[{
-            "id": tool_id,
-            "type": "function",
-            "function": {
-                "name": tool_name,
-                "arguments": json.dumps(tool_input)
-            }
-        }]
-    )
-    updated_messages.append(tool_call_msg)
-    
-    # Add error message as tool result
-    tool_result_message = ChatCompletionRequestMessage(
-        role="tool",
-        content=error_message,
-        tool_call_id=tool_id
-    )
-    updated_messages.append(tool_result_message)
-    
-    # Update anthropic_messages too
-    anthropic_messages.append({
-        "role": "assistant",
-        "content": [
-            {"type": "tool_use", "id": tool_id, "name": tool_name, "input": tool_input}
-        ]
-    })
-    anthropic_messages.append({
-        "role": "user",
-        "content": [
-            {
-                "type": "tool_result",
-                "tool_use_id": tool_id,
-                "content": error_message
-            }
-        ]
-    })
-    
-    return anthropic_messages, updated_messages
-
-
-async def _process_tool_result(
-    tool_name: str,
-    tool_id: str,
-    result: Any,
-    result_text: str,
-    is_tool_image: bool,
-    anthropic_messages: List[Dict[str, Any]],
-    updated_messages: List[ChatCompletionRequestMessage]
-) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage]]:
-    """Process tool result based on type (image or text)"""
-    # Check if this is an image tool and extract image if available
-    if is_tool_image:
-        image_content = await extract_tool_result_image(result)
-        if image_content:
-            # If we have image data, add it to the user message with tool result
-            anthropic_messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "content": result_text or "Here is the screenshot:"
-                    },
-                    image_content
-                ]
-            })
-            logger.info(f"Added image from {tool_name} to message")
+    # Process the follow-up response
+    if 'choices' in follow_up_response:
+        # Extract thinking blocks
+        new_thinking_blocks = follow_up_response.get('thinking_blocks', [])
+        
+        # Check for more tool calls
+        finish_reason = follow_up_response['choices'][0]['finish_reason']
+        if finish_reason == 'tool_use' and 'content' in follow_up_response:
+            # Recursively process more tool calls
+            return await _process_tool_calls_response(
+                follow_up_response, 
+                anthropic_messages, 
+                updated_messages, 
+                new_thinking_blocks,
+                customer_logger
+            )
         else:
-            # Fall back to text-only if no image was extracted
-            anthropic_messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "content": result_text
-                    }
-                ]
-            })
-            logger.warning(f"No image found for {tool_name}, using text-only response")
+            # Process as a text response
+            return await _process_text_response(
+                follow_up_response['choices'][0]['message'], 
+                anthropic_messages, 
+                updated_messages, 
+                new_thinking_blocks
+            )
     else:
-        # Regular text-only tool result
-        anthropic_messages.append({
-            "role": "user",
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tool_id,
-                    "content": result_text
-                }
-            ]
+        # Handle error
+        logger.error("Invalid follow-up response format")
+        if customer_logger:
+            customer_logger.log_system_event("error", {
+                "message": "Invalid follow-up response format from Anthropic API",
+            })
+        return anthropic_messages, updated_messages, thinking_blocks, False
+
+
+async def _make_follow_up_api_call(
+    anthropic_messages: List[Dict[str, Any]],
+    updated_messages: List[ChatCompletionRequestMessage],
+    thinking_blocks: List[Dict[str, Any]],
+    previous_response: Dict[str, Any],
+    customer_logger: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Make a follow-up API call after processing tool results"""
+    # Convert updated messages back to Anthropic format
+    follow_up_messages = _convert_messages_to_anthropic_format(updated_messages)
+    
+    # Get the model from the previous response
+    model = previous_response.get('model', 'claude-3-7-sonnet-20250219')
+    
+    if customer_logger:
+        customer_logger.log_system_event("follow_up_api_call", {
+            "provider": "anthropic",
+            "model": model
         })
     
-    return anthropic_messages, updated_messages
+    # Call Anthropic API with the updated messages including tool results
+    return await anthropic_chat_completions(
+        messages=follow_up_messages,
+        model=model,
+        max_tokens=3000,
+        budget_tokens=2048,
+        thinking_blocks=thinking_blocks
+    )
 
 
 async def _process_text_response(
@@ -434,7 +364,7 @@ async def _process_text_response(
     anthropic_messages: List[Dict[str, Any]],
     updated_messages: List[ChatCompletionRequestMessage],
     thinking_blocks: List[Dict[str, Any]]
-) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], bool]:
+) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], List[Dict[str, Any]], bool]:
     """Process a regular text response from the model"""
     message_content = message_data["content"]
     

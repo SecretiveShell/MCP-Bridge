@@ -2,7 +2,7 @@
 """OpenAI API handler for the agent worker"""
 
 import json
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from loguru import logger
 
 from mcp_bridge.openai_clients.chatCompletion import chat_completions
@@ -20,13 +20,15 @@ from lmos_openai_types import (
 
 async def process_with_openai(
     messages: List[ChatCompletionRequestMessage],
-    model: str
+    model: str,
+    customer_logger: Optional[Any] = None
 ) -> Tuple[List[ChatCompletionRequestMessage], bool]:
     """Process a single iteration with OpenAI API
     
     Args:
         messages: The current conversation history
         model: The model name to use
+        customer_logger: Optional customer message logger
         
     Returns:
         Tuple containing:
@@ -36,6 +38,12 @@ async def process_with_openai(
     updated_messages = messages.copy()
     
     # Process with MCP OpenAI-compatible API
+    if customer_logger:
+        customer_logger.log_system_event("api_call", {
+            "provider": "openai",
+            "model": model
+        })
+        
     request = CreateChatCompletionRequest(
         model=model,
         messages=messages
@@ -55,6 +63,11 @@ async def process_with_openai(
         
         # Process tool calls if present
         if message.tool_calls:
+            if customer_logger:
+                customer_logger.log_system_event("tool_use", {
+                    "tool_calls": len(message.tool_calls)
+                })
+                
             assistant_message = ChatCompletionRequestMessage(
                 role="assistant",
                 content=None,
@@ -66,69 +79,75 @@ async def process_with_openai(
             print(f"\nAssistant wants to use tools:")
             
             for tool_call in message.tool_calls:
-                if tool_call.type == "function":
-                    function = tool_call.function
-                    tool_name = function.name
+                tool_id = tool_call.id
+                tool_type = tool_call.type
+                tool_name = tool_call.function.name
+                tool_args = tool_call.function.arguments
+                
+                # Attempt to parse JSON arguments
+                try:
+                    tool_args_dict = json.loads(tool_args)
+                except Exception:
+                    tool_args_dict = {"raw_args": tool_args}
+                
+                if customer_logger:
+                    customer_logger.log_tool_call(tool_name, tool_args_dict, tool_id)
                     
-                    # Sanitize tool name to ensure it only contains allowed characters
-                    if "." in tool_name or not all(c.isalnum() or c in "_-" for c in tool_name):
-                        logger.warning(f"Sanitizing tool name: {tool_name}")
-                        # For tools with periods (like mcp_mcp_my_apple_remembers_my_apple_recall_memory),
-                        # use the last part after the final period
-                        if "." in tool_name:
-                            tool_name = tool_name.split(".")[-1]
-                        # Replace any remaining invalid characters with underscores
-                        tool_name = "".join(c if (c.isalnum() or c in "_-") else "_" for c in tool_name)
+                # Call the tool
+                logger.info(f"Calling tool: {tool_name}")
+                print(f"Tool: {tool_name}")
+                print(f"Arguments: {tool_args}")
+                
+                # Import here to avoid circular imports
+                from mcp_bridge.openai_clients.utils import call_tool
+                
+                tool_result = await call_tool(tool_name, tool_args)
+                
+                if tool_result:
+                    # Extract content from result
+                    tool_result_text = extract_tool_result_text(tool_result)
                     
-                    tool_args = json.loads(function.arguments)
-                    tool_id = tool_call.id
+                    # Check if this is an image tool
+                    has_image = is_image_tool(tool_name) and extract_tool_result_image(tool_result) is not None
                     
-                    logger.info(f"Calling tool: {tool_name}")
-                    print(f"\nTool Call: {tool_name}")
-                    print(f"Arguments: {json.dumps(tool_args, indent=2)}")
+                    if customer_logger:
+                        customer_logger.log_tool_result(tool_id, tool_result_text, has_image)
+                        
+                    print(f"Tool result: {tool_result_text}")
                     
-                    # Import ClientManager here to avoid circular imports
-                    from mcp_bridge.mcp_clients.McpClientManager import ClientManager
-                    session = await ClientManager.get_client_from_tool(tool_name)
-                    
-                    if session:
-                        try:
-                            # Call the tool
-                            result = await session.function_call(tool_name, tool_args)
-                            result_text = await extract_tool_result_text(result)
-                            print(f"Tool Result: {result_text}")
-                            
-                            # Add tool result message
-                            tool_result_message = ChatCompletionRequestMessage(
-                                role="tool",
-                                content=result_text,
-                                tool_call_id=tool_id
-                            )
-                            updated_messages.append(tool_result_message)
-                            
-                            # If this is an image tool, store the image data in a way that can be
-                            # retrieved later by the anthropic formatter if needed
-                            if await is_image_tool(tool_name):
-                                image_content = await extract_tool_result_image(result)
-                                if image_content:
-                                    # Store the image data in the message's metadata for later use
-                                    if not hasattr(tool_result_message, "metadata"):
-                                        tool_result_message.metadata = {}
-                                    tool_result_message.metadata["image_content"] = image_content
-                                    logger.info(f"Stored image from {tool_name} in message metadata")
-                        except Exception as e:
-                            error_message = f"Error executing tool {tool_name}: {str(e)}"
-                            logger.error(error_message)
-                            
-                            # Add error message to conversation
-                            tool_result_message = ChatCompletionRequestMessage(
-                                role="tool",
-                                content=error_message,
-                                tool_call_id=tool_id
-                            )
-                            updated_messages.append(tool_result_message)
-                    else:
-                        error_message = f"Tool {tool_name} not found or not available"
+                    # Add tool result to conversation
+                    tool_result_message = ChatCompletionRequestMessage(
+                        role="tool",
+                        content=tool_result_text,
+                        tool_call_id=tool_id
+                    )
+                    updated_messages.append(tool_result_message)
+                else:
+                    if customer_logger:
+                        error_message = f"Error executing tool {tool_name}"
+                        customer_logger.log_tool_result(tool_id, error_message)
+                        
+                    try:
+                        from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+                        clients = ClientManager.get_clients()
+                        client_names = [name for name, client in clients]
+                        logger.error(f"Tool {tool_name} not found. Available clients: {client_names}")
+                    except Exception as e:
+                        logger.error(f"Error accessing ClientManager: {str(e)}")
+                        
+                    try:
+                        error_message = f"Error executing tool {tool_name}: Tool not found or unavailable"
+                        logger.error(error_message)
+                        
+                        # Add error message to conversation
+                        tool_result_message = ChatCompletionRequestMessage(
+                            role="tool",
+                            content=error_message,
+                            tool_call_id=tool_id
+                        )
+                        updated_messages.append(tool_result_message)
+                    except Exception as e:
+                        error_message = f"Error executing tool {tool_name}: {str(e)}"
                         logger.error(error_message)
                         
                         # Add error message to conversation
@@ -140,14 +159,25 @@ async def process_with_openai(
                         updated_messages.append(tool_result_message)
         else:
             if message.content:
+                if customer_logger:
+                    customer_logger.log_message("assistant", message.content)
+                    
                 updated_messages.append(assistant_message)
                 print(f"\nAssistant: {message.content}")
                 
                 # Check for task completion
                 if is_task_complete(message.content):
                     logger.info("Task completed successfully.")
+                    if customer_logger:
+                        customer_logger.log_system_event("task_complete", {
+                            "final_message": message.content[:100] + "..." if len(message.content) > 100 else message.content
+                        })
                     return updated_messages, True  # Task is complete
     else:
         logger.warning("No choices in response")
+        if customer_logger:
+            customer_logger.log_system_event("error", {
+                "message": "No choices in OpenAI API response"
+            })
     
     return updated_messages, False  # Task is not complete 
