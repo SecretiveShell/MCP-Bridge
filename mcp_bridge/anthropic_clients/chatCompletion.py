@@ -32,9 +32,8 @@ def _build_request_params(
     max_tokens: int,
     temperature: Optional[float],
     top_p: Optional[float],
-    system: Optional[Union[str, List[Dict[str, Any]]]],
+    system: Optional[Union[str, List[Dict[str, Any]], Dict[str, Any]]],
     tools: List[Dict[str, Any]],
-    thinking_blocks: Optional[List[Dict[str, Any]]] = None,
     budget_tokens: Optional[int] = None
 ) -> Dict[str, Any]:
     """Build the parameters for Anthropic API request"""
@@ -46,12 +45,7 @@ def _build_request_params(
     
     # Add system prompt if provided
     if system:
-        # If system is a string, convert it to a properly formatted system block
-        if isinstance(system, str):
-            params["system"] = system
-        else:
-            # System is already a list of content blocks with caching
-            params["system"] = system
+        params["system"] = system
     
     # Only add tools parameter if we have tools available
     if tools:
@@ -63,10 +57,6 @@ def _build_request_params(
             "type": "enabled",
             "budget_tokens": budget_tokens
         }
-        
-        # Add thinking blocks if provided
-        if thinking_blocks:
-            params["thinking"]["blocks"] = thinking_blocks
     
     # Add optional parameters if provided
     if temperature is not None:
@@ -196,7 +186,7 @@ def _add_tool_messages(
         })
 
 
-def _format_final_response(response: Any, model: str) -> Dict[str, Any]:
+def _format_final_response(response: Any, model: str, thinking_blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Format the Anthropic response to match expected structure"""
     try:
         content_text = ""
@@ -238,14 +228,15 @@ def _format_final_response(response: Any, model: str) -> Dict[str, Any]:
         # Add thinking blocks if available
         if thinking_blocks:
             formatted_response["thinking_blocks"] = thinking_blocks
-            
+        
+        logger.info(f"Returning response with {len(formatted_response['thinking_blocks'])} thinking blocks.")
         return formatted_response
     except Exception as e:
         logger.error(f"Error formatting Anthropic response: {e}")
         return _build_error_response(model, "Error formatting Anthropic response")
 
 
-async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], params: Dict[str, Any], model: str) -> Any:
+async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], params: Dict[str, Any], model: str, thinking_blocks: List[Dict[str, Any]]) -> Any:
     """Process tool calls in the response and make follow-up requests"""
     while hasattr(response, "stop_reason") and response.stop_reason == "tool_use":
         logger.info("Tool use detected in Anthropic response")
@@ -285,9 +276,13 @@ async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], par
             
             # Add the tool messages to the conversation
             _add_tool_messages(messages, tool_name, tool_input, tool_id, tool_content, image_data)
-        
-        # Make a follow-up request with the updated messages
-        params["messages"] = messages
+
+                # Update messages with new thinking blocks for tool processing
+        if thinking_blocks:
+            messages = _insert_thinking_into_messages(messages, thinking_blocks)
+            logger.info(f"Added {len(thinking_blocks)} thinking blocks to tool call messages.")
+            params["messages"] = messages
+    
         try:
             response = client.messages.create(**params)
         except Exception as e:
@@ -295,6 +290,107 @@ async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], par
             return _build_error_response(model, f"Error from Anthropic API during tool processing: {str(e)}")
     
     return response
+
+
+def _format_thinking_blocks(thinking_blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Format thinking blocks to ensure they're properly structured.
+    
+    Args:
+        thinking_blocks: Raw thinking blocks
+        
+    Returns:
+        Properly formatted thinking blocks ready to be added to content
+    """
+    if not thinking_blocks:
+        return []
+        
+    # Ensure thinking blocks are properly formatted
+    formatted_blocks = []
+    for block in thinking_blocks:
+        # Check if the block is already properly formatted
+        formatted_blocks.append({"type": "thinking", "thinking": block.thinking, "signature": block.signature})
+            
+    return formatted_blocks
+
+
+def _add_thinking_to_message_content(message: Dict[str, Any], thinking_blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Add thinking blocks to a message's content.
+    
+    Args:
+        message: Message to add thinking blocks to
+        thinking_blocks: Thinking blocks to add
+        
+    Returns:
+        Updated message with thinking blocks added to content
+    """
+    if not thinking_blocks:
+        return message.copy()
+        
+    # Create a new message with the same role
+    updated_message = {"role": message.get("role", "assistant")}
+    
+    # Initialize content based on original message
+    if "content" not in message:
+        # Create new content with just thinking blocks
+        updated_message["content"] = thinking_blocks
+    elif isinstance(message["content"], list):
+        # Add thinking blocks to the beginning of existing content list
+        updated_message["content"] = thinking_blocks + message["content"]
+    else:
+        # Convert string content to a content list with thinking blocks at the beginning
+        # followed by the original content as a text block
+        updated_message["content"] = thinking_blocks + [{"type": "text", "text": message["content"]}]
+    
+    return updated_message
+
+
+def _insert_thinking_into_messages(
+    messages: List[Dict[str, Any]], 
+    thinking_blocks: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Insert thinking blocks into a messages list.
+    This function decides where to put the thinking blocks.
+    
+    Args:
+        messages: Original messages list
+        thinking_blocks: Thinking blocks to insert
+        
+    Returns:
+        Updated messages list with thinking blocks inserted
+    """
+    if not thinking_blocks:
+        return messages.copy()
+    
+    formatted_blocks = _format_thinking_blocks(thinking_blocks)
+    if not formatted_blocks:
+        return messages.copy()
+        
+    updated_messages = messages.copy()
+    
+    # Find the last assistant message if it exists
+    last_assistant_message = None
+    last_assistant_message_index = None
+    for i, message in enumerate(updated_messages):
+        if message.get("role") == "assistant":
+            last_assistant_message = message
+            last_assistant_message_index = i
+    
+    if last_assistant_message:
+        # Add thinking blocks to this existing assistant message
+        updated_messages[last_assistant_message_index] = _add_thinking_to_message_content(last_assistant_message, formatted_blocks)
+        return updated_messages
+    
+    # If no assistant message found, create one at the beginning
+    new_assistant_message = {
+        "role": "assistant",
+        "content": formatted_blocks
+    }
+    
+    # Insert new assistant message at the beginning
+    return updated_messages + [new_assistant_message]
 
 
 async def anthropic_chat_completions(
@@ -327,6 +423,11 @@ async def anthropic_chat_completions(
     
     # Fetch tools from MCP clients and convert to Anthropic format
     tools = await anthropic_get_tools()
+
+    # Add thinking blocks to messages if provided
+    if thinking_blocks:
+        messages = _insert_thinking_into_messages(messages, thinking_blocks)
+        logger.info(f"Added {len(thinking_blocks)} thinking blocks to chat completion messages.")
     
     # Configure parameters for the request
     params = _build_request_params(
@@ -337,7 +438,6 @@ async def anthropic_chat_completions(
         top_p=top_p,
         system=system,
         tools=tools,
-        thinking_blocks=thinking_blocks,
         budget_tokens=budget_tokens
     )
     
@@ -351,15 +451,24 @@ async def anthropic_chat_completions(
             
         response = client.messages.create(**params)
 
-        logger.info(f"Anthropic response: {response}")
-        
-        # Process tool calls if any
-        response = await _process_tool_calls(response, messages, params, model)
 
-        logger.info(f"Anthropic response with tool results: {response}")
-        
+        # Extract thinking blocks from response.content if present
+        # 2025-04-04 12:07:43.040 | INFO     | mcp_bridge.anthropic_clients.chatCompletion:anthropic_chat_completions:445 - ####
+        # Anthropic response: Message(id='msg_01Fr7c1ScZVt1h4K1Jfu8ydR', content=[ThinkingBlock(signature='ErUBCkYIAhgCIkBkCSygZlTjQIbvTBlBDzEB9hQPdqVTCfaLpbXov6jKQTCr0cwj+d9Kg6NHAJ/jYIVhaI52qiqnSwklKBC75TraEgxIK05y/y2kkeo7iW0aDMueHFQfA2cIHylnnyIwEYLKtArYryxF4v+Dd8CionQAv25pNYPxzeXcRNO9UPLFij0V5ZQFxLQuw4UCcHVBKh2XDwjruyn+mnK4HHhdN2Q5EbASrAsEDqCvE0SL5g==', thinking="I need to check for new emails as Olivia, a recruiter at Peakmojo. Let me first get a screenshot of the MacOS desktop to see what's currently displayed and determine if there's an email client open.\n\nAfter getting the screenshot, I'll assess what email client is being used (likely Mail app) and interact with it to check for new emails. If the email client isn't open, I'll need to open it first.", type='thinking'), TextBlock(citations=None, text="I'll check for any new emails for you. Let me get a view of the current screen first.", type='text'), ToolUseBlock(id='toolu_011QEAgHb4YF2uJwPgBsrS1T', input={}, name='remote_macos_get_screen', type='tool_use')], model='claude-3-7-sonnet-20250219', role='assistant', stop_reason='tool_use', stop_sequence=None, type='message', usage=Usage(cache_creation_input_tokens=0, cache_read_input_tokens=1477, input_tokens=202, output_tokens=167))
+        # ####
+        total_new_thinking_blocks = 0
+        if hasattr(response, "content"):
+            for item in response.content:
+                if hasattr(item, "type") and item.type in ["thinking", "redacted_thinking"]:
+                    thinking_blocks.append(item)
+                    total_new_thinking_blocks += 1
+        logger.info(f"Added {total_new_thinking_blocks} thinking blocks from response to the tool use messages.")
+
+        # Process tool calls if any
+        response = await _process_tool_calls(response, messages, params, model, thinking_blocks)
+
         # Format the response to match expected structure
-        return _format_final_response(response, model)
+        return _format_final_response(response, model, thinking_blocks)
             
     except Exception as e:
         logger.error(f"Error from Anthropic API: {e}")

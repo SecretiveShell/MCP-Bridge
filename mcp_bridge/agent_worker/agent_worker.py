@@ -29,7 +29,7 @@ class AgentWorker:
         self.system_prompt = system_prompt or "You are a helpful assistant that completes tasks using available tools. Use the tools provided to you to help complete the user's task."
         self.messages: List[ChatCompletionRequestMessage] = []
         self.max_iterations = max_iterations
-        
+        self.thinking_blocks: List[Dict[str, Any]] = []
     async def initialize(self):
         """Initialize the MCP clients"""
         logger.info("Initializing MCP clients...")
@@ -89,12 +89,19 @@ class AgentWorker:
                     task_complete = False
                     if is_anthropic_model(self.model):
                         # Use Anthropic processing
-                        _, updated_messages, task_complete = await process_with_anthropic(
+                        _, updated_messages, thinking_blocks, task_complete = await process_with_anthropic(
                             messages=self.messages,
                             model=self.model,
-                            system_prompt=self.system_prompt
+                            system_prompt=self.system_prompt,
+                            thinking_blocks=self.thinking_blocks
                         )
                         self.messages = updated_messages
+                        
+                        # Check for duplicate thinking blocks before adding
+                        # ThinkingBlock from Anthropic has a signature property
+                        existing_signatures = {block.signature for block in self.thinking_blocks if block.signature}
+                        unique_blocks = [block for block in thinking_blocks if block.signature not in existing_signatures]
+                        self.thinking_blocks.extend(unique_blocks)
                     else:
                         # Use OpenAI processing
                         updated_messages, task_complete = await process_with_openai(

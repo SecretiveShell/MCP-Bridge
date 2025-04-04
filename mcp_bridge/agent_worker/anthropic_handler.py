@@ -21,7 +21,8 @@ from lmos_openai_types import (
 async def process_with_anthropic(
     messages: List[ChatCompletionRequestMessage],
     model: str,
-    system_prompt: Optional[str] = None
+    system_prompt: Optional[str] = None,
+    thinking_blocks: Optional[List[Dict[str, Any]]] = None
 ) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], bool]:
     """Process a single iteration with Anthropic API
     
@@ -50,12 +51,15 @@ async def process_with_anthropic(
         model=model,
         system=formatted_system_prompt,
         max_tokens=3000,
-        budget_tokens=2048
+        budget_tokens=2048,
+        thinking_blocks=thinking_blocks
     )
     
     if not response or "choices" not in response or not response["choices"]:
         logger.warning("No choices in Anthropic response")
-        return anthropic_messages, updated_messages, False
+        # log important details without the raw message content, in one line
+        logger.info(f"Received response with {len(thinking_blocks)} thinking blocks, {len(anthropic_messages)} messages, {len(updated_messages)} updated messages, is_complete: {is_complete}")
+        return anthropic_messages, updated_messages, thinking_blocks, False
     
     choice = response["choices"][0]
     message_data = choice["message"]
@@ -78,10 +82,12 @@ async def process_with_anthropic(
         
         # Tool calls were processed, return to continue the loop
         return anthropic_messages, updated_messages, False
-        
+
+    new_thinking_blocks = response.get("thinking_blocks", [])
+    thinking_blocks.extend(new_thinking_blocks)
     # Handle regular text response
     return await _process_text_response(
-        message_data, anthropic_messages, updated_messages
+        message_data, anthropic_messages, updated_messages, thinking_blocks
     )
 
 
@@ -426,7 +432,8 @@ async def _process_tool_result(
 async def _process_text_response(
     message_data: Dict[str, Any],
     anthropic_messages: List[Dict[str, Any]],
-    updated_messages: List[ChatCompletionRequestMessage]
+    updated_messages: List[ChatCompletionRequestMessage],
+    thinking_blocks: List[Dict[str, Any]]
 ) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], bool]:
     """Process a regular text response from the model"""
     message_content = message_data["content"]
@@ -444,4 +451,4 @@ async def _process_text_response(
     if is_complete:
         logger.info("Task completed successfully.")
     
-    return anthropic_messages, updated_messages, is_complete 
+    return anthropic_messages, updated_messages, thinking_blocks, is_complete 
