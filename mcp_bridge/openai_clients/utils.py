@@ -4,11 +4,12 @@ from lmos_openai_types import CreateChatCompletionRequest
 import mcp.types
 import json
 
-from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2openai
 
 
 async def chat_completion_add_tools(request: CreateChatCompletionRequest):
+    from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+    
     request.tools = []
 
     for _, session in ClientManager.get_clients():
@@ -27,6 +28,8 @@ async def chat_completion_add_tools(request: CreateChatCompletionRequest):
 async def call_tool(
     tool_call_name: str, tool_call_json: str, timeout: Optional[int] = None
 ) -> Optional[mcp.types.CallToolResult]:
+    from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+    
     if tool_call_name == "" or tool_call_name is None:
         logger.error("tool call name is empty")
         return None

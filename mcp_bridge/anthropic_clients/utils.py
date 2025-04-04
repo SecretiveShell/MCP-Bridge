@@ -4,7 +4,6 @@ import mcp.types
 import json
 import asyncio
 
-from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from mcp_bridge.tool_mappers import mcp2anthropic
 
 
@@ -45,6 +44,9 @@ async def anthropic_get_tools() -> List[Dict[str, Any]]:
     Get MCP tools and convert them to Anthropic format.
     Returns a list of tools in Anthropic format.
     """
+    # Import ClientManager inside the function
+    from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+    
     tools = []
     clients = ClientManager.get_clients()
     logger.info(f"Found {len(clients)} MCP clients")
@@ -98,6 +100,9 @@ async def call_tool(
     Call a tool with the given name and input.
     Returns the tool call result or None if the call failed.
     """
+    # Import ClientManager inside the function
+    from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+    
     if not tool_name:
         logger.error("Tool name is empty")
         return None
