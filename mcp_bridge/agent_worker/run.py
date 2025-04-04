@@ -8,7 +8,7 @@ import os
 import uuid
 from typing import Dict, Any
 from loguru import logger
-from agent_worker import AgentWorker
+from mcp_bridge.agent_worker.agent_worker import AgentWorker
 
 def load_config_from_file(config_file: str = "agent_worker_task.json") -> Dict[str, Any]:
     """Load configuration from JSON file"""

@@ -39,4 +39,5 @@ path = "mcp_bridge/__init__.py"
 
 [project.scripts]
 mcp-bridge = "mcp_bridge.main:run"
+bridge-agent = "mcp_bridge.agent_worker.run:main"
 
