@@ -67,7 +67,6 @@ async def anthropic_chat_completions(
     # Only add tools parameter if we have tools available
     if tools:
         params["tools"] = tools
-        params["betas"] = ["token-efficient-tools-2025-02-19"]
     
     # Add optional parameters if provided
     if temperature is not None:
@@ -80,7 +79,7 @@ async def anthropic_chat_completions(
         logger.info(f"Calling Anthropic API with {len(tools)} tools")
         if tools:
             logger.info(f"Tool names: {[t['name'] for t in tools]}")
-        response = client.beta.messages.create(**params)
+        response = client.messages.create(**params)
         
         # Process tool calls if any
         while hasattr(response, "stop_reason") and response.stop_reason == "tool_use":
@@ -234,7 +233,7 @@ async def anthropic_chat_completions(
             # Make a follow-up request with the updated messages
             params["messages"] = messages
             try:
-                response = client.beta.messages.create(**params)
+                response = client.messages.create(**params)
             except Exception as e:
                 logger.error(f"Error from Anthropic API during tool processing: {e}")
                 return {
