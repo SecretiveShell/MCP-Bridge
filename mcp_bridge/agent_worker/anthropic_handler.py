@@ -48,7 +48,9 @@ async def process_with_anthropic(
     response = await anthropic_chat_completions(
         messages=anthropic_messages,
         model=model,
-        system=formatted_system_prompt
+        system=formatted_system_prompt,
+        max_tokens=3000,
+        budget_tokens=2048
     )
     
     if not response or "choices" not in response or not response["choices"]:

@@ -33,7 +33,9 @@ def _build_request_params(
     temperature: Optional[float],
     top_p: Optional[float],
     system: Optional[Union[str, List[Dict[str, Any]]]],
-    tools: List[Dict[str, Any]]
+    tools: List[Dict[str, Any]],
+    thinking_blocks: Optional[List[Dict[str, Any]]] = None,
+    budget_tokens: Optional[int] = None
 ) -> Dict[str, Any]:
     """Build the parameters for Anthropic API request"""
     params = {
@@ -54,6 +56,17 @@ def _build_request_params(
     # Only add tools parameter if we have tools available
     if tools:
         params["tools"] = tools
+    
+    # Add thinking configuration if budget_tokens is provided
+    if budget_tokens is not None:
+        params["thinking"] = {
+            "type": "enabled",
+            "budget_tokens": budget_tokens
+        }
+        
+        # Add thinking blocks if provided
+        if thinking_blocks:
+            params["thinking"]["blocks"] = thinking_blocks
     
     # Add optional parameters if provided
     if temperature is not None:
@@ -187,8 +200,18 @@ def _format_final_response(response: Any, model: str) -> Dict[str, Any]:
     """Format the Anthropic response to match expected structure"""
     try:
         content_text = ""
+        thinking_blocks = []
+        
         if hasattr(response, "content"):
-            content_text = "".join([item.text for item in response.content if hasattr(item, "text")])
+            # Extract thinking blocks and text content
+            for item in response.content:
+                if hasattr(item, "type"):
+                    if item.type in ["thinking", "redacted_thinking"]:
+                        thinking_blocks.append(item)
+                    elif item.type == "text" and hasattr(item, "text"):
+                        content_text += item.text
+                elif hasattr(item, "text"):
+                    content_text += item.text
         
         # Structure the response to match OpenAI format for compatibility
         formatted_response = {
@@ -211,6 +234,10 @@ def _format_final_response(response: Any, model: str) -> Dict[str, Any]:
         # Add the original content for tool processing
         if hasattr(response, "content"):
             formatted_response["content"] = response.content
+            
+        # Add thinking blocks if available
+        if thinking_blocks:
+            formatted_response["thinking_blocks"] = thinking_blocks
             
         return formatted_response
     except Exception as e:
@@ -277,6 +304,8 @@ async def anthropic_chat_completions(
     temperature: Optional[float] = None,
     top_p: Optional[float] = None,
     system: Optional[Union[str, List[Dict[str, Any]]]] = None,
+    thinking_blocks: Optional[List[Dict[str, Any]]] = None,
+    budget_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Perform chat completion using the Anthropic API with MCP tools.
@@ -288,6 +317,8 @@ async def anthropic_chat_completions(
         temperature: Sampling temperature (0-1)
         top_p: Nucleus sampling parameter
         system: System prompt as string or list of content blocks with caching controls
+        thinking_blocks: Previous thinking blocks from Claude to maintain thought continuity
+        budget_tokens: Number of tokens to allocate for Claude's thinking process
     """
     # Check if client is available
     if client is None:
@@ -298,17 +329,34 @@ async def anthropic_chat_completions(
     tools = await anthropic_get_tools()
     
     # Configure parameters for the request
-    params = _build_request_params(messages, model, max_tokens, temperature, top_p, system, tools)
+    params = _build_request_params(
+        messages=messages,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        system=system,
+        tools=tools,
+        thinking_blocks=thinking_blocks,
+        budget_tokens=budget_tokens
+    )
     
     try:
         # Initial request to Anthropic
         logger.info(f"Calling Anthropic API with {len(tools)} tools")
         if tools:
             logger.info(f"Tool names: {[t['name'] for t in tools]}")
+        if budget_tokens:
+            logger.info(f"Using thinking with budget of {budget_tokens} tokens")
+            
         response = client.messages.create(**params)
+
+        logger.info(f"Anthropic response: {response}")
         
         # Process tool calls if any
         response = await _process_tool_calls(response, messages, params, model)
+
+        logger.info(f"Anthropic response with tool results: {response}")
         
         # Format the response to match expected structure
         return _format_final_response(response, model)
