@@ -103,14 +103,13 @@ def main():
     try:
         exit_code = asyncio.run(run_cli())
         # Force program to exit immediately
-        os._exit(exit_code)
+        sys.exit(exit_code)
     except KeyboardInterrupt:
         logger.info("Agent worker interrupted by user")
-        os._exit(1)
+        sys.exit(1)
     except Exception as e:
         logger.exception(f"Unexpected error in main: {e}")
-        os._exit(1)
-
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 
