@@ -62,8 +62,17 @@ async def process_with_anthropic(
         system=formatted_system_prompt,
         max_tokens=3000,
         budget_tokens=2048,
-        thinking_blocks=thinking_blocks
+        thinking_blocks=thinking_blocks,
+        customer_logger=customer_logger
     )
+
+    # log api response
+    logger.info(f"Anthropic response: {response}")
+    if customer_logger:
+        logger.info(f"Logging anthropic response to customer logger")
+        customer_logger.log_system_event("anthropic_response", {
+            "response": json.dumps(response, default=str)
+        })
     
     # Process different types of responses (tool calls, text, etc.)
     if 'choices' in response:
@@ -294,6 +303,12 @@ async def _process_tool_calls_response(
         response,
         customer_logger
     )
+
+    if customer_logger:
+        # log api response
+        customer_logger.log_system_event("follow_up_api_response", {
+            "response": follow_up_response
+        })
     
     # Process the follow-up response
     if 'choices' in follow_up_response:

@@ -53,7 +53,18 @@ class CustomerMessageLogger:
         with open(self.log_path, "w") as f:
             json.dump(log_data, f, indent=2)
         
+        # Create a streaming log file for real-time reading
+        self.stream_path = os.path.join(self.log_dir, f"stream_{timestamp}_{self.session_id}.jsonl")
+        with open(self.stream_path, "w") as f:
+            # Write the session metadata as the first line
+            f.write(json.dumps({
+                "type": "metadata",
+                "session_id": self.session_id,
+                "start_time": datetime.now().isoformat()
+            }) + "\n")
+            
         logger.info(f"Initialized customer message log: {self.log_path}")
+        logger.info(f"Initialized streaming log: {self.stream_path}")
         return self.log_path
     
     def log_message(self, role: str, content: str, message_type: str = "message") -> None:
@@ -72,7 +83,7 @@ class CustomerMessageLogger:
         }
         
         self.messages.append(message)
-        self._write_to_log()
+        self._append_to_stream("message", message)
         
     def log_tool_call(self, tool_name: str, tool_input: Any, tool_id: str) -> None:
         """Log a tool call by the assistant
@@ -92,7 +103,7 @@ class CustomerMessageLogger:
         }
         
         self.messages.append(tool_call)
-        self._write_to_log()
+        self._append_to_stream("message", tool_call)
         
     def log_tool_result(self, tool_id: str, result: str, has_image: bool = False) -> None:
         """Log a tool result
@@ -112,7 +123,7 @@ class CustomerMessageLogger:
         }
         
         self.messages.append(tool_result)
-        self._write_to_log()
+        self._append_to_stream("message", tool_result)
         
     def log_thinking(self, thinking_content: str, signature: Optional[str] = None) -> None:
         """Log a thinking block from the AI
@@ -128,7 +139,7 @@ class CustomerMessageLogger:
         }
         
         self.thinking_blocks.append(thinking)
-        self._write_to_log()
+        self._append_to_stream("thinking", thinking)
         
     def log_system_event(self, event_type: str, details: Dict[str, Any]) -> None:
         """Log a system event
@@ -144,10 +155,34 @@ class CustomerMessageLogger:
         }
         
         self.system_events.append(event)
-        self._write_to_log()
+        self._append_to_stream("system_event", event)
         
+    def _append_to_stream(self, entry_type: str, data: Dict[str, Any]) -> None:
+        """Append an entry to the streaming log file
+        
+        Args:
+            entry_type: Type of entry (message, thinking, system_event)
+            data: Data to append
+        """
+        if not self.stream_path:
+            logger.warning("Cannot write to stream, log file not initialized")
+            return
+            
+        try:
+            stream_entry = {
+                "entry_type": entry_type,
+                "timestamp": datetime.now().isoformat(),
+                "data": data
+            }
+            
+            with open(self.stream_path, "a") as f:
+                f.write(json.dumps(stream_entry) + "\n")
+                f.flush()  # Force write to disk
+        except Exception as e:
+            logger.error(f"Error appending to stream log: {e}")
+            
     def _write_to_log(self) -> None:
-        """Write current state to the log file"""
+        """Write current state to the log file periodically for backup purposes"""
         if not self.log_path:
             logger.warning("Cannot write to log, log file not initialized")
             return
@@ -166,6 +201,11 @@ class CustomerMessageLogger:
                 json.dump(log_data, f, indent=2)
         except Exception as e:
             logger.error(f"Error writing to customer log: {e}")
+    
+    def write_final_log(self) -> None:
+        """Write the final state to the log file at the end of the session"""
+        self._write_to_log()
+        logger.info(f"Finalized customer message log: {self.log_path}")
     
     def get_summary(self) -> Dict[str, Any]:
         """Get a summary of the message flow

@@ -188,55 +188,55 @@ def _add_tool_messages(
 
 def _format_final_response(response: Any, model: str, thinking_blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Format the Anthropic response to match expected structure"""
-    try:
-        content_text = ""
-        thinking_blocks = []
-        
-        if hasattr(response, "content"):
-            # Extract thinking blocks and text content
-            for item in response.content:
-                if hasattr(item, "type"):
-                    if item.type in ["thinking", "redacted_thinking"]:
-                        thinking_blocks.append(item)
-                    elif item.type == "text" and hasattr(item, "text"):
-                        content_text += item.text
-                elif hasattr(item, "text"):
+    content_text = ""
+    thinking_blocks = []
+    
+    if hasattr(response, "content"):
+        # Extract thinking blocks and text content
+        for item in response.content:
+            if hasattr(item, "type"):
+                if item.type in ["thinking", "redacted_thinking"]:
+                    thinking_blocks.append(item)
+                elif item.type == "text" and hasattr(item, "text"):
                     content_text += item.text
-        
-        # Structure the response to match OpenAI format for compatibility
-        formatted_response = {
-            "id": response.id,
-            "model": response.model,
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": content_text,
-                },
-                "finish_reason": response.stop_reason
-            }],
-            "usage": {
-                "prompt_tokens": getattr(response.usage, "input_tokens", 0),
-                "completion_tokens": getattr(response.usage, "output_tokens", 0),
-                "total_tokens": getattr(response.usage, "input_tokens", 0) + getattr(response.usage, "output_tokens", 0)
-            }
+            elif hasattr(item, "text"):
+                content_text += item.text
+    
+    # Structure the response to match OpenAI format for compatibility
+    formatted_response = {
+        "id": response.id,
+        "model": response.model,
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": content_text,
+            },
+            "finish_reason": response.stop_reason
+        }],
+        "usage": {
+            "prompt_tokens": getattr(response.usage, "input_tokens", 0),
+            "completion_tokens": getattr(response.usage, "output_tokens", 0),
+            "total_tokens": getattr(response.usage, "input_tokens", 0) + getattr(response.usage, "output_tokens", 0)
         }
+    }
+    
+    # Add the original content for tool processing
+    if hasattr(response, "content"):
+        formatted_response["content"] = response.content
         
-        # Add the original content for tool processing
-        if hasattr(response, "content"):
-            formatted_response["content"] = response.content
-            
-        # Add thinking blocks if available
-        if thinking_blocks:
-            formatted_response["thinking_blocks"] = thinking_blocks
-        
+    # Add thinking blocks if available
+    if thinking_blocks:
+        formatted_response["thinking_blocks"] = thinking_blocks
+    
+    if 'thinking_blocks' in formatted_response:
         logger.info(f"Returning response with {len(formatted_response['thinking_blocks'])} thinking blocks.")
-        return formatted_response
-    except Exception as e:
-        logger.error(f"Error formatting Anthropic response: {e}")
-        return _build_error_response(model, "Error formatting Anthropic response")
+    else:
+        logger.info("No thinking blocks in response")
+
+    return formatted_response
 
 
-async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], params: Dict[str, Any], model: str, thinking_blocks: List[Dict[str, Any]]) -> Any:
+async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], params: Dict[str, Any], model: str, thinking_blocks: List[Dict[str, Any]], customer_logger: Optional[Any] = None) -> Any:
     """Process tool calls in the response and make follow-up requests"""
     while hasattr(response, "stop_reason") and response.stop_reason == "tool_use":
         logger.info("Tool use detected in Anthropic response")
@@ -255,6 +255,9 @@ async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], par
             tool_name = content_item.name
             tool_input = content_item.input
             tool_id = content_item.id
+
+            if customer_logger:
+                customer_logger.log_tool_call(content_item.name, content_item.input, content_item.id)
             
             # Call the tool using the utility function
             tool_result = await call_tool(tool_name, tool_input)
@@ -273,6 +276,9 @@ async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], par
             
             # Process tool result to extract text and images
             tool_content, image_data = _process_tool_result(tool_name, tool_result)
+
+            if customer_logger:
+                customer_logger.log_tool_result(tool_id, tool_content, image_data is not None)
             
             # Add the tool messages to the conversation
             _add_tool_messages(messages, tool_name, tool_input, tool_id, tool_content, image_data)
@@ -282,12 +288,25 @@ async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], par
             messages = _insert_thinking_into_messages(messages, thinking_blocks)
             logger.info(f"Added {len(thinking_blocks)} thinking blocks to tool call messages.")
             params["messages"] = messages
+
+            if customer_logger:
+                customer_logger.log_thinking(_format_thinking_blocks(thinking_blocks))
     
-        try:
-            response = client.messages.create(**params)
-        except Exception as e:
-            logger.error(f"Error from Anthropic API during tool processing: {e}")
-            return _build_error_response(model, f"Error from Anthropic API during tool processing: {str(e)}")
+        response = client.messages.create(**params)
+
+        if customer_logger:
+            customer_logger.log_system_event("anthropic_tool_call_response", {
+                "response": json.dumps(response, default=str)
+            })
+        
+        total_new_thinking_blocks = 0
+        thinking_blocks = []
+        if hasattr(response, "content"):
+            for item in response.content:
+                if hasattr(item, "type") and item.type in ["thinking", "redacted_thinking"]:
+                    thinking_blocks.append(item)
+                    total_new_thinking_blocks += 1
+        logger.info(f"Added {total_new_thinking_blocks} thinking blocks from tool use response to the tool use messages.")
     
     return response
 
@@ -402,6 +421,7 @@ async def anthropic_chat_completions(
     system: Optional[Union[str, List[Dict[str, Any]]]] = None,
     thinking_blocks: Optional[List[Dict[str, Any]]] = None,
     budget_tokens: Optional[int] = None,
+    customer_logger: Optional[Any] = None
 ) -> Dict[str, Any]:
     """
     Perform chat completion using the Anthropic API with MCP tools.
@@ -441,35 +461,49 @@ async def anthropic_chat_completions(
         budget_tokens=budget_tokens
     )
     
-    try:
-        # Initial request to Anthropic
-        logger.info(f"Calling Anthropic API with {len(tools)} tools")
-        if tools:
-            logger.info(f"Tool names: {[t['name'] for t in tools]}")
-        if budget_tokens:
-            logger.info(f"Using thinking with budget of {budget_tokens} tokens")
-            
-        response = client.messages.create(**params)
+    # Initial request to Anthropic
+    logger.info(f"Calling Anthropic API with {len(tools)} tools")
+    if tools:
+        logger.info(f"Tool names: {[t['name'] for t in tools]}")
+    if budget_tokens:
+        logger.info(f"Using thinking with budget of {budget_tokens} tokens")
+        
+    response = client.messages.create(**params)
+
+    if customer_logger:
+        customer_logger.log_system_event("anthropic_response", {
+            "response": json.dumps(response, default=str)
+        })
 
 
-        # Extract thinking blocks from response.content if present
-        # 2025-04-04 12:07:43.040 | INFO     | mcp_bridge.anthropic_clients.chatCompletion:anthropic_chat_completions:445 - ####
-        # Anthropic response: Message(id='msg_01Fr7c1ScZVt1h4K1Jfu8ydR', content=[ThinkingBlock(signature='ErUBCkYIAhgCIkBkCSygZlTjQIbvTBlBDzEB9hQPdqVTCfaLpbXov6jKQTCr0cwj+d9Kg6NHAJ/jYIVhaI52qiqnSwklKBC75TraEgxIK05y/y2kkeo7iW0aDMueHFQfA2cIHylnnyIwEYLKtArYryxF4v+Dd8CionQAv25pNYPxzeXcRNO9UPLFij0V5ZQFxLQuw4UCcHVBKh2XDwjruyn+mnK4HHhdN2Q5EbASrAsEDqCvE0SL5g==', thinking="I need to check for new emails as Olivia, a recruiter at Peakmojo. Let me first get a screenshot of the MacOS desktop to see what's currently displayed and determine if there's an email client open.\n\nAfter getting the screenshot, I'll assess what email client is being used (likely Mail app) and interact with it to check for new emails. If the email client isn't open, I'll need to open it first.", type='thinking'), TextBlock(citations=None, text="I'll check for any new emails for you. Let me get a view of the current screen first.", type='text'), ToolUseBlock(id='toolu_011QEAgHb4YF2uJwPgBsrS1T', input={}, name='remote_macos_get_screen', type='tool_use')], model='claude-3-7-sonnet-20250219', role='assistant', stop_reason='tool_use', stop_sequence=None, type='message', usage=Usage(cache_creation_input_tokens=0, cache_read_input_tokens=1477, input_tokens=202, output_tokens=167))
-        # ####
-        total_new_thinking_blocks = 0
-        if hasattr(response, "content"):
-            for item in response.content:
-                if hasattr(item, "type") and item.type in ["thinking", "redacted_thinking"]:
-                    thinking_blocks.append(item)
-                    total_new_thinking_blocks += 1
-        logger.info(f"Added {total_new_thinking_blocks} thinking blocks from response to the tool use messages.")
+    # Extract thinking blocks from response.content if present
+    # 2025-04-04 12:07:43.040 | INFO     | mcp_bridge.anthropic_clients.chatCompletion:anthropic_chat_completions:445 - ####
+    # Anthropic response: Message(id='msg_01Fr7c1ScZVt1h4K1Jfu8ydR', content=[ThinkingBlock(signature='ErUBCkYIAhgCIkBkCSygZlTjQIbvTBlBDzEB9hQPdqVTCfaLpbXov6jKQTCr0cwj+d9Kg6NHAJ/jYIVhaI52qiqnSwklKBC75TraEgxIK05y/y2kkeo7iW0aDMueHFQfA2cIHylnnyIwEYLKtArYryxF4v+Dd8CionQAv25pNYPxzeXcRNO9UPLFij0V5ZQFxLQuw4UCcHVBKh2XDwjruyn+mnK4HHhdN2Q5EbASrAsEDqCvE0SL5g==', thinking="I need to check for new emails as Olivia, a recruiter at Peakmojo. Let me first get a screenshot of the MacOS desktop to see what's currently displayed and determine if there's an email client open.\n\nAfter getting the screenshot, I'll assess what email client is being used (likely Mail app) and interact with it to check for new emails. If the email client isn't open, I'll need to open it first.", type='thinking'), TextBlock(citations=None, text="I'll check for any new emails for you. Let me get a view of the current screen first.", type='text'), ToolUseBlock(id='toolu_011QEAgHb4YF2uJwPgBsrS1T', input={}, name='remote_macos_get_screen', type='tool_use')], model='claude-3-7-sonnet-20250219', role='assistant', stop_reason='tool_use', stop_sequence=None, type='message', usage=Usage(cache_creation_input_tokens=0, cache_read_input_tokens=1477, input_tokens=202, output_tokens=167))
+    # ####
+    total_new_thinking_blocks = 0
+    if hasattr(response, "content"):
+        for item in response.content:
+            if hasattr(item, "type") and item.type in ["thinking", "redacted_thinking"]:
+                thinking_blocks.append(item)
+                total_new_thinking_blocks += 1
+    logger.info(f"Added {total_new_thinking_blocks} thinking blocks from response to the tool use messages.")
 
-        # Process tool calls if any
-        response = await _process_tool_calls(response, messages, params, model, thinking_blocks)
+    # Process tool calls if any
+    response = await _process_tool_calls(response, messages, params, model, thinking_blocks, customer_logger)
 
-        # Format the response to match expected structure
-        return _format_final_response(response, model, thinking_blocks)
-            
-    except Exception as e:
-        logger.error(f"Error from Anthropic API: {e}")
-        return _build_error_response(model, f"Error from Anthropic API: {str(e)}") 
+    if customer_logger:
+        customer_logger.log_system_event("anthropic_response", {
+            "response": json.dumps(response, default=str)
+        })
+    
+    total_new_thinking_blocks = 0
+    if hasattr(response, "content"):
+        for item in response.content:
+            if hasattr(item, "type") and item.type in ["thinking", "redacted_thinking"]:
+                thinking_blocks.append(item)
+                total_new_thinking_blocks += 1
+    logger.info(f"Added {total_new_thinking_blocks} thinking blocks from tool use response to the tool use messages.")
+
+
+    # Format the response to match expected structure
+    return _format_final_response(response, model, thinking_blocks)
