@@ -292,7 +292,7 @@ async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], par
             if customer_logger:
                 customer_logger.log_thinking(_format_thinking_blocks(thinking_blocks))
     
-        response = client.messages.create(**params)
+        response = client.beta.messages.create(**params)
 
         if customer_logger:
             customer_logger.log_system_event("anthropic_tool_call_response", {
@@ -458,8 +458,10 @@ async def anthropic_chat_completions(
         top_p=top_p,
         system=system,
         tools=tools,
-        budget_tokens=budget_tokens
+        budget_tokens=budget_tokens,
     )
+
+    params["betas"] = ["computer-use-2025-01-24"]
     
     # Initial request to Anthropic
     logger.info(f"Calling Anthropic API with {len(tools)} tools")
@@ -468,7 +470,7 @@ async def anthropic_chat_completions(
     if budget_tokens:
         logger.info(f"Using thinking with budget of {budget_tokens} tokens")
         
-    response = client.messages.create(**params)
+    response = client.beta.messages.create(**params)
 
     if customer_logger:
         customer_logger.log_system_event("anthropic_response", {
