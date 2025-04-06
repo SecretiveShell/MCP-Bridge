@@ -2,7 +2,7 @@ from typing import Dict, Any, List, Optional, Union
 import json
 from loguru import logger
 
-from .genericClient import client
+from .genericClient import client, create_messages
 from .utils import anthropic_get_tools, call_tool
 
 
@@ -292,7 +292,7 @@ async def _process_tool_calls(response: Any, messages: List[Dict[str, Any]], par
             if customer_logger:
                 customer_logger.log_thinking(_format_thinking_blocks(thinking_blocks))
     
-        response = client.beta.messages.create(**params)
+        response = await create_messages(**params)
 
         if customer_logger:
             customer_logger.log_system_event("anthropic_tool_call_response", {
@@ -436,7 +436,7 @@ async def anthropic_chat_completions(
         thinking_blocks: Previous thinking blocks from Claude to maintain thought continuity
         budget_tokens: Number of tokens to allocate for Claude's thinking process
     """
-    # Check if client is available
+    # Check if client is None
     if client is None:
         logger.error("Anthropic client not initialized")
         return _build_error_response(model, "Error: Anthropic client not initialized. Check API key in config.json.")
@@ -463,14 +463,14 @@ async def anthropic_chat_completions(
 
     params["betas"] = ["computer-use-2025-01-24"]
     
-    # Initial request to Anthropic
-    logger.info(f"Calling Anthropic API with {len(tools)} tools")
+    # Initial request to Anthropic or Bedrock
+    logger.info(f"Calling Claude API with {len(tools)} tools")
     if tools:
         logger.info(f"Tool names: {[t['name'] for t in tools]}")
     if budget_tokens:
         logger.info(f"Using thinking with budget of {budget_tokens} tokens")
         
-    response = client.beta.messages.create(**params)
+    response = await create_messages(**params)
 
     if customer_logger:
         customer_logger.log_system_event("anthropic_response", {
@@ -479,9 +479,6 @@ async def anthropic_chat_completions(
 
 
     # Extract thinking blocks from response.content if present
-    # 2025-04-04 12:07:43.040 | INFO     | mcp_bridge.anthropic_clients.chatCompletion:anthropic_chat_completions:445 - ####
-    # Anthropic response: Message(id='msg_01Fr7c1ScZVt1h4K1Jfu8ydR', content=[ThinkingBlock(signature='ErUBCkYIAhgCIkBkCSygZlTjQIbvTBlBDzEB9hQPdqVTCfaLpbXov6jKQTCr0cwj+d9Kg6NHAJ/jYIVhaI52qiqnSwklKBC75TraEgxIK05y/y2kkeo7iW0aDMueHFQfA2cIHylnnyIwEYLKtArYryxF4v+Dd8CionQAv25pNYPxzeXcRNO9UPLFij0V5ZQFxLQuw4UCcHVBKh2XDwjruyn+mnK4HHhdN2Q5EbASrAsEDqCvE0SL5g==', thinking="I need to check for new emails as Olivia, a recruiter at Peakmojo. Let me first get a screenshot of the MacOS desktop to see what's currently displayed and determine if there's an email client open.\n\nAfter getting the screenshot, I'll assess what email client is being used (likely Mail app) and interact with it to check for new emails. If the email client isn't open, I'll need to open it first.", type='thinking'), TextBlock(citations=None, text="I'll check for any new emails for you. Let me get a view of the current screen first.", type='text'), ToolUseBlock(id='toolu_011QEAgHb4YF2uJwPgBsrS1T', input={}, name='remote_macos_get_screen', type='tool_use')], model='claude-3-7-sonnet-20250219', role='assistant', stop_reason='tool_use', stop_sequence=None, type='message', usage=Usage(cache_creation_input_tokens=0, cache_read_input_tokens=1477, input_tokens=202, output_tokens=167))
-    # ####
     total_new_thinking_blocks = 0
     if hasattr(response, "content"):
         for item in response.content:

@@ -19,6 +19,7 @@ dependencies = [
     "sse-starlette>=2.2.0",
     "tortoise-orm[asyncmy,asyncpg]>=0.23.0",
     "uvicorn>=0.34.0",
+    "boto3>=1.37.28",
 ]
 
 [tool.uv.sources]
