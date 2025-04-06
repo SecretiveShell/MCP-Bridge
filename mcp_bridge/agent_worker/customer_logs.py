@@ -20,8 +20,7 @@ class CustomerMessageLogger:
         """
         self.log_dir = log_dir
         self.session_id = session_id or str(uuid.uuid4())
-        self.log_file = None
-        self.log_path = None
+        self.stream_path = None
         self.messages = []
         self.thinking_blocks = []
         self.system_events = []
@@ -37,24 +36,9 @@ class CustomerMessageLogger:
         
         # Create a timestamped filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"agent_session_{timestamp}_{self.session_id}.json"
-        self.log_path = os.path.join(self.log_dir, filename)
-        
-        # Create initial log structure
-        log_data = {
-            "session_id": self.session_id,
-            "start_time": datetime.now().isoformat(),
-            "messages": [],
-            "thinking_blocks": [],
-            "system_events": []
-        }
-        
-        # Write initial log structure to file
-        with open(self.log_path, "w") as f:
-            json.dump(log_data, f, indent=2)
         
         # Create a streaming log file for real-time reading
-        self.stream_path = os.path.join(self.log_dir, f"stream_{timestamp}_{self.session_id}.jsonl")
+        self.stream_path = os.path.join(self.log_dir, f"session_{timestamp}_{self.session_id}.jsonl")
         with open(self.stream_path, "w") as f:
             # Write the session metadata as the first line
             f.write(json.dumps({
@@ -63,9 +47,8 @@ class CustomerMessageLogger:
                 "start_time": datetime.now().isoformat()
             }) + "\n")
             
-        logger.info(f"Initialized customer message log: {self.log_path}")
         logger.info(f"Initialized streaming log: {self.stream_path}")
-        return self.log_path
+        return self.stream_path
     
     def log_message(self, role: str, content: str, message_type: str = "message") -> None:
         """Log a message in the conversation
@@ -180,32 +163,29 @@ class CustomerMessageLogger:
                 f.flush()  # Force write to disk
         except Exception as e:
             logger.error(f"Error appending to stream log: {e}")
-            
-    def _write_to_log(self) -> None:
-        """Write current state to the log file periodically for backup purposes"""
-        if not self.log_path:
-            logger.warning("Cannot write to log, log file not initialized")
+    
+    def write_final_log(self) -> None:
+        """Write a final summary entry to the log at the end of the session"""
+        if not self.stream_path:
+            logger.warning("Cannot write final entry, log file not initialized")
             return
             
         try:
-            log_data = {
-                "session_id": self.session_id,
-                "start_time": self.messages[0]["timestamp"] if self.messages else datetime.now().isoformat(),
-                "last_updated": datetime.now().isoformat(),
-                "messages": self.messages,
-                "thinking_blocks": self.thinking_blocks,
-                "system_events": self.system_events
+            # Add a final summary entry to the stream
+            summary = self.get_summary()
+            summary_entry = {
+                "entry_type": "summary",
+                "timestamp": datetime.now().isoformat(),
+                "data": summary
             }
             
-            with open(self.log_path, "w") as f:
-                json.dump(log_data, f, indent=2)
+            with open(self.stream_path, "a") as f:
+                f.write(json.dumps(summary_entry) + "\n")
+                f.flush()
+                
+            logger.info(f"Finalized customer message log: {self.stream_path}")
         except Exception as e:
-            logger.error(f"Error writing to customer log: {e}")
-    
-    def write_final_log(self) -> None:
-        """Write the final state to the log file at the end of the session"""
-        self._write_to_log()
-        logger.info(f"Finalized customer message log: {self.log_path}")
+            logger.error(f"Error writing final summary: {e}")
     
     def get_summary(self) -> Dict[str, Any]:
         """Get a summary of the message flow
