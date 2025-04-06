@@ -2,8 +2,13 @@
 """Anthropic/Claude API handler for the agent worker"""
 
 import json
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
+
 from loguru import logger
+
+from lmos_openai_types import (
+    ChatCompletionRequestMessage,
+)
 
 from mcp_bridge.anthropic_clients.chatCompletion import anthropic_chat_completions
 from mcp_bridge.anthropic_clients.utils import call_tool
@@ -13,18 +18,15 @@ from mcp_bridge.agent_worker.utils import (
     is_image_tool,
     is_task_complete
 )
-from lmos_openai_types import (
-    ChatCompletionRequestMessage,
-)
 
 
 async def process_with_anthropic(
     messages: List[ChatCompletionRequestMessage],
     model: str,
     system_prompt: Optional[str] = None,
-    thinking_blocks: Optional[List[Dict[str, Any]]] = None,
-    customer_logger: Optional[Any] = None
-) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], List[Dict[str, Any]], bool]:
+    thinking_blocks: Optional[List[Dict[str, object]]] = None,
+    customer_logger: Optional["CustomerMessageLogger"] = None
+) -> Tuple[List[Dict[str, object]], List[ChatCompletionRequestMessage], List[Dict[str, object]], bool]:
     """Process a single iteration with Anthropic API
     
     Args:
@@ -125,7 +127,7 @@ async def process_with_anthropic(
 
 def _convert_messages_to_anthropic_format(
     messages: List[ChatCompletionRequestMessage]
-) -> List[Dict[str, Any]]:
+) -> List[Dict[str, object]]:
     """Convert OpenAI-style messages to Anthropic format"""
     anthropic_messages = []
     
@@ -206,7 +208,7 @@ def _convert_messages_to_anthropic_format(
     return anthropic_messages
 
 
-def _format_system_prompt(system_prompt: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+def _format_system_prompt(system_prompt: Optional[str]) -> Optional[List[Dict[str, object]]]:
     """Format the system prompt for Anthropic"""
     if system_prompt:
         return [
@@ -219,7 +221,7 @@ def _format_system_prompt(system_prompt: Optional[str]) -> Optional[List[Dict[st
     return None
 
 
-def _extract_tool_calls(content_items: List[Any]) -> List[Dict[str, Any]]:
+def _extract_tool_calls(content_items: List[object]) -> List[Dict[str, object]]:
     """Extract tool calls from content items"""
     tool_calls = []
     for item in content_items:
@@ -231,12 +233,12 @@ def _extract_tool_calls(content_items: List[Any]) -> List[Dict[str, Any]]:
 
 
 async def _process_tool_calls_response(
-    response: Dict[str, Any],
-    anthropic_messages: List[Dict[str, Any]],
+    response: Dict[str, object],
+    anthropic_messages: List[Dict[str, object]],
     updated_messages: List[ChatCompletionRequestMessage],
-    thinking_blocks: List[Dict[str, Any]],
-    customer_logger: Optional[Any] = None
-) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], List[Dict[str, Any]], bool]:
+    thinking_blocks: List[Dict[str, object]],
+    customer_logger: Optional["CustomerMessageLogger"] = None
+) -> Tuple[List[Dict[str, object]], List[ChatCompletionRequestMessage], List[Dict[str, object]], bool]:
     """Process a response that contains tool calls"""
     content_items = response.get('content', [])
     
@@ -345,12 +347,12 @@ async def _process_tool_calls_response(
 
 
 async def _make_follow_up_api_call(
-    anthropic_messages: List[Dict[str, Any]],
+    anthropic_messages: List[Dict[str, object]],
     updated_messages: List[ChatCompletionRequestMessage],
-    thinking_blocks: List[Dict[str, Any]],
-    previous_response: Dict[str, Any],
-    customer_logger: Optional[Any] = None
-) -> Dict[str, Any]:
+    thinking_blocks: List[Dict[str, object]],
+    previous_response: Dict[str, object],
+    customer_logger: Optional["CustomerMessageLogger"] = None
+) -> Dict[str, object]:
     """Make a follow-up API call after processing tool results"""
     # Convert updated messages back to Anthropic format
     follow_up_messages = _convert_messages_to_anthropic_format(updated_messages)
@@ -375,11 +377,11 @@ async def _make_follow_up_api_call(
 
 
 async def _process_text_response(
-    message_data: Dict[str, Any],
-    anthropic_messages: List[Dict[str, Any]],
+    message_data: Dict[str, object],
+    anthropic_messages: List[Dict[str, object]],
     updated_messages: List[ChatCompletionRequestMessage],
-    thinking_blocks: List[Dict[str, Any]]
-) -> Tuple[List[Dict[str, Any]], List[ChatCompletionRequestMessage], List[Dict[str, Any]], bool]:
+    thinking_blocks: List[Dict[str, object]]
+) -> Tuple[List[Dict[str, object]], List[ChatCompletionRequestMessage], List[Dict[str, object]], bool]:
     """Process a regular text response from the model"""
     message_content = message_data["content"]
     

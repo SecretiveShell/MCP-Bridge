@@ -1,10 +1,16 @@
 import json
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, List, Optional, Union, Protocol, runtime_checkable
 from loguru import logger
 
 
-async def extract_tool_result_text(result) -> str:
+@runtime_checkable
+class ToolResult(Protocol):
+    """Protocol for tool result objects"""
+    content: List[object]
+
+
+async def extract_tool_result_text(result: Optional[ToolResult]) -> str:
     """Extract text content from tool result"""
     if not result or not hasattr(result, "content"):
         return "No result returned from tool"
@@ -17,7 +23,7 @@ async def extract_tool_result_text(result) -> str:
     return " ".join(text_parts) if text_parts else "No text content in result"
 
 
-async def extract_tool_result_image(result) -> Optional[Dict[str, Any]]:
+async def extract_tool_result_image(result: Optional[ToolResult]) -> Optional[Dict[str, object]]:
     """Extract image content from tool result if available"""
     if not result or not hasattr(result, "content"):
         return None

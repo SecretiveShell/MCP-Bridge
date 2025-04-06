@@ -1,4 +1,5 @@
 from typing import Union
+import os
 
 from loguru import logger
 from mcp import McpError, StdioServerParameters
@@ -6,6 +7,7 @@ from mcpx.client.transports.docker import DockerMCPServer
 
 from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
+from mcp_bridge.utils import force_exit
 
 from .DockerClient import DockerClient
 from .SseClient import SseClient
@@ -29,8 +31,7 @@ class MCPClientManager:
 
     async def shutdown(self):
         """Simply exit the program"""
-        import os
-        os._exit(0)
+        force_exit(0)
 
     async def construct_client(self, name, server_config) -> client_types:
         logger.log("DEBUG", f"Constructing client for {server_config}")

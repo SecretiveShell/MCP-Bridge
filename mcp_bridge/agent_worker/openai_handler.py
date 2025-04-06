@@ -2,8 +2,15 @@
 """OpenAI API handler for the agent worker"""
 
 import json
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
+
 from loguru import logger
+
+from lmos_openai_types import (
+    CreateChatCompletionRequest,
+    ChatCompletionRequestMessage,
+    ChatCompletionResponseMessage
+)
 
 from mcp_bridge.openai_clients.chatCompletion import chat_completions
 from mcp_bridge.agent_worker.utils import (
@@ -12,16 +19,12 @@ from mcp_bridge.agent_worker.utils import (
     is_image_tool,
     is_task_complete
 )
-from lmos_openai_types import (
-    CreateChatCompletionRequest,
-    ChatCompletionRequestMessage,
-)
 
 
 async def process_with_openai(
     messages: List[ChatCompletionRequestMessage],
     model: str,
-    customer_logger: Optional[Any] = None
+    customer_logger: Optional["CustomerMessageLogger"] = None
 ) -> Tuple[List[ChatCompletionRequestMessage], bool]:
     """Process a single iteration with OpenAI API
     
@@ -105,10 +108,10 @@ async def process_with_openai(
                 
                 if tool_result:
                     # Extract content from result
-                    tool_result_text = extract_tool_result_text(tool_result)
+                    tool_result_text = await extract_tool_result_text(tool_result)
                     
                     # Check if this is an image tool
-                    has_image = is_image_tool(tool_name) and extract_tool_result_image(tool_result) is not None
+                    has_image = await is_image_tool(tool_name) and await extract_tool_result_image(tool_result) is not None
                     
                     if customer_logger:
                         customer_logger.log_tool_result(tool_id, tool_result_text, has_image)

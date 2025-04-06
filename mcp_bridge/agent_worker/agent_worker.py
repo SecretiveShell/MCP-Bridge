@@ -2,13 +2,17 @@
 """Agent worker module that provides standalone command-line agent execution"""
 
 import asyncio
-from typing import Dict, Any, List, Optional, Tuple
+import os
+from typing import Dict, List, Optional, Tuple
+
 from loguru import logger
 
 from mcp_bridge.agent_worker.utils import is_anthropic_model
 from mcp_bridge.agent_worker.anthropic_handler import process_with_anthropic
 from mcp_bridge.agent_worker.openai_handler import process_with_openai
-from mcp_bridge.agent_worker.customer_logs import get_logger
+from mcp_bridge.agent_worker.customer_logs import get_logger, CustomerMessageLogger
+from mcp_bridge.mcp_clients.McpClientManager import ClientManager
+from mcp_bridge.utils import force_exit
 from lmos_openai_types import (
     ChatCompletionRequestMessage,
     ChatCompletionRequestSystemMessage,
@@ -31,21 +35,19 @@ class AgentWorker:
         self.system_prompt = system_prompt or "You are a helpful assistant that completes tasks using available tools. Use the tools provided to you to help complete the user's task."
         self.messages: List[ChatCompletionRequestMessage] = []
         self.max_iterations = max_iterations
-        self.thinking_blocks: List[Dict[str, Any]] = []
+        self.thinking_blocks: List[Dict[str, object]] = []
         self.session_id = session_id
         # Initialize customer message logger
-        self.customer_logger = get_logger(initialize=True, session_id=self.session_id)
+        self.customer_logger: CustomerMessageLogger = get_logger(initialize=True, session_id=self.session_id)
         self.customer_logger.log_system_event("initialization", {
             "task": task,
             "model": model,
             "max_iterations": max_iterations
         })
         
-    async def initialize(self):
+    async def initialize(self) -> None:
         """Initialize the MCP clients"""
         logger.info("Initializing MCP clients...")
-        # Import here to avoid circular imports
-        from mcp_bridge.mcp_clients.McpClientManager import ClientManager
         # Start the ClientManager to load all available MCP clients
         await ClientManager.initialize()
         
@@ -86,18 +88,17 @@ class AgentWorker:
         self.customer_logger.log_message("system", self.system_prompt)
         self.customer_logger.log_message("user", self.task)
     
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Shutdown all MCP clients"""
         logger.info("Shutting down MCP clients...")
         # Log shutdown event
         self.customer_logger.log_system_event("shutdown", {
             "summary": self.customer_logger.get_summary()
         })
-        # Import here to avoid circular imports
-        import os
-        os._exit(0)
+        # Exit the program
+        force_exit(0)
     
-    async def run_agent_loop(self):
+    async def run_agent_loop(self) -> List[ChatCompletionRequestMessage]:
         """Run the agent loop to process the task until completion"""
         await self.initialize()
         logger.info("Starting agent loop...")
@@ -126,16 +127,18 @@ class AgentWorker:
                 
                 # Check for duplicate thinking blocks before adding
                 # ThinkingBlock from Anthropic has a signature property
-                existing_signatures = {block.signature for block in self.thinking_blocks if hasattr(block, "signature") and block.signature}
-                unique_blocks = [block for block in thinking_blocks if not hasattr(block, "signature") or block.signature not in existing_signatures]
+                existing_signatures = {block.signature for block in self.thinking_blocks 
+                                      if block.signature}
+                unique_blocks = [block for block in thinking_blocks 
+                                if not block.signature or block.signature not in existing_signatures]
                 self.thinking_blocks.extend(unique_blocks)
                 
                 # Log thinking blocks to customer log
                 for block in unique_blocks:
-                    if hasattr(block, "thinking") and block.thinking:
+                    if block.get("thinking"):
                         self.customer_logger.log_thinking(
-                            block.thinking,
-                            getattr(block, "signature", None)
+                            block["thinking"],
+                            block.get("signature")
                         )
             else:
                 # Use OpenAI processing
@@ -155,12 +158,11 @@ class AgentWorker:
                 return self.messages
         
         # If we reached max iterations without completion
-        if iteration >= self.max_iterations - 1:
-            logger.warning(f"Reached maximum iterations ({self.max_iterations}) without task completion")
-            self.customer_logger.log_system_event("max_iterations_reached", {
-                "max_iterations": self.max_iterations,
-                "summary": self.customer_logger.get_summary()
-            })
+        logger.warning(f"Reached maximum iterations ({self.max_iterations}) without task completion")
+        self.customer_logger.log_system_event("max_iterations_reached", {
+            "max_iterations": self.max_iterations,
+            "summary": self.customer_logger.get_summary()
+        })
             
         # Return final messages for inspection
         return self.messages

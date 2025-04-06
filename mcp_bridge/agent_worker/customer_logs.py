@@ -3,10 +3,44 @@
 
 import os
 import json
-from datetime import datetime
-from typing import Dict, Any, List, Optional, Union
-from loguru import logger
 import uuid
+from datetime import datetime
+from typing import Dict, List, Optional, Union, TypedDict
+from loguru import logger
+
+
+class ThinkingBlockDict(TypedDict, total=False):
+    """Type for thinking block dictionary"""
+    timestamp: str
+    content: str
+    signature: Optional[str]
+
+
+class MessageDict(TypedDict, total=False):
+    """Type for message dictionary"""
+    timestamp: str
+    role: str
+    content: str
+    type: str
+    tool_name: Optional[str]
+    tool_input: object
+    tool_id: Optional[str]
+    has_image: Optional[bool]
+
+
+class SystemEventDict(TypedDict, total=False):
+    """Type for system event dictionary"""
+    timestamp: str
+    type: str
+    details: Dict[str, object]
+
+
+class StreamEntryDict(TypedDict):
+    """Type for stream entry dictionary"""
+    entry_type: str
+    timestamp: str
+    data: Dict[str, object]
+
 
 class CustomerMessageLogger:
     """Logger for customer-facing message flows in agent worker"""
@@ -20,10 +54,10 @@ class CustomerMessageLogger:
         """
         self.log_dir = log_dir
         self.session_id = session_id or str(uuid.uuid4())
-        self.stream_path = None
-        self.messages = []
-        self.thinking_blocks = []
-        self.system_events = []
+        self.stream_path: Optional[str] = None
+        self.messages: List[MessageDict] = []
+        self.thinking_blocks: List[ThinkingBlockDict] = []
+        self.system_events: List[SystemEventDict] = []
         
     def initialize(self) -> str:
         """Initialize the log file and directory
@@ -58,7 +92,7 @@ class CustomerMessageLogger:
             content: Content of the message
             message_type: Type of message (message, tool_call, tool_result)
         """
-        message = {
+        message: MessageDict = {
             "timestamp": datetime.now().isoformat(),
             "role": role,
             "content": content,
@@ -68,7 +102,7 @@ class CustomerMessageLogger:
         self.messages.append(message)
         self._append_to_stream("message", message)
         
-    def log_tool_call(self, tool_name: str, tool_input: Any, tool_id: str) -> None:
+    def log_tool_call(self, tool_name: str, tool_input: object, tool_id: str) -> None:
         """Log a tool call by the assistant
         
         Args:
@@ -76,7 +110,7 @@ class CustomerMessageLogger:
             tool_input: Input to the tool
             tool_id: ID of the tool call
         """
-        tool_call = {
+        tool_call: MessageDict = {
             "timestamp": datetime.now().isoformat(),
             "role": "assistant",
             "type": "tool_call",
@@ -96,7 +130,7 @@ class CustomerMessageLogger:
             result: Result from the tool
             has_image: Whether the result includes an image
         """
-        tool_result = {
+        tool_result: MessageDict = {
             "timestamp": datetime.now().isoformat(),
             "role": "tool",
             "type": "tool_result",
@@ -115,7 +149,7 @@ class CustomerMessageLogger:
             thinking_content: Content of the thinking block
             signature: Optional signature for the thinking block
         """
-        thinking = {
+        thinking: ThinkingBlockDict = {
             "timestamp": datetime.now().isoformat(),
             "content": thinking_content,
             "signature": signature
@@ -124,14 +158,14 @@ class CustomerMessageLogger:
         self.thinking_blocks.append(thinking)
         self._append_to_stream("thinking", thinking)
         
-    def log_system_event(self, event_type: str, details: Dict[str, Any]) -> None:
+    def log_system_event(self, event_type: str, details: Dict[str, object]) -> None:
         """Log a system event
         
         Args:
             event_type: Type of system event (error, info, warning)
             details: Details of the event
         """
-        event = {
+        event: SystemEventDict = {
             "timestamp": datetime.now().isoformat(),
             "type": event_type,
             "details": details
@@ -140,7 +174,7 @@ class CustomerMessageLogger:
         self.system_events.append(event)
         self._append_to_stream("system_event", event)
         
-    def _append_to_stream(self, entry_type: str, data: Dict[str, Any]) -> None:
+    def _append_to_stream(self, entry_type: str, data: Dict[str, object]) -> None:
         """Append an entry to the streaming log file
         
         Args:
@@ -152,7 +186,7 @@ class CustomerMessageLogger:
             return
             
         try:
-            stream_entry = {
+            stream_entry: StreamEntryDict = {
                 "entry_type": entry_type,
                 "timestamp": datetime.now().isoformat(),
                 "data": data
@@ -173,7 +207,7 @@ class CustomerMessageLogger:
         try:
             # Add a final summary entry to the stream
             summary = self.get_summary()
-            summary_entry = {
+            summary_entry: StreamEntryDict = {
                 "entry_type": "summary",
                 "timestamp": datetime.now().isoformat(),
                 "data": summary
@@ -187,7 +221,7 @@ class CustomerMessageLogger:
         except Exception as e:
             logger.error(f"Error writing final summary: {e}")
     
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> Dict[str, object]:
         """Get a summary of the message flow
         
         Returns:
@@ -198,26 +232,38 @@ class CustomerMessageLogger:
             
         start_time = datetime.fromisoformat(self.messages[0]["timestamp"])
         end_time = datetime.fromisoformat(self.messages[-1]["timestamp"])
-        duration = (end_time - start_time).total_seconds()
         
-        # Count message types
-        message_types = {}
-        for message in self.messages:
-            message_type = message.get("type", "message")
-            if message_type not in message_types:
-                message_types[message_type] = 0
-            message_types[message_type] += 1
+        # Calculate message counts by role
+        role_counts: Dict[str, int] = {}
+        for msg in self.messages:
+            role = msg.get("role", "unknown")
+            role_counts[role] = role_counts.get(role, 0) + 1
             
+        # Calculate tool usage
+        tool_calls = [msg for msg in self.messages if msg.get("type") == "tool_call"]
+        tool_results = [msg for msg in self.messages if msg.get("type") == "tool_result"]
+        
+        # Count tools by name
+        tool_counts: Dict[str, int] = {}
+        for tool in tool_calls:
+            tool_name = tool.get("tool_name", "unknown")
+            tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+        
         return {
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "duration_seconds": (end_time - start_time).total_seconds(),
             "message_count": len(self.messages),
-            "thinking_block_count": len(self.thinking_blocks),
-            "system_event_count": len(self.system_events),
-            "duration_seconds": duration,
-            "message_types": message_types
+            "thinking_count": len(self.thinking_blocks),
+            "event_count": len(self.system_events),
+            "role_counts": role_counts,
+            "tool_call_count": len(tool_calls),
+            "tool_result_count": len(tool_results),
+            "tool_counts": tool_counts
         }
 
 # Singleton instance for global access
-_logger_instance = None
+_logger_instance: Optional[CustomerMessageLogger] = None
 
 def get_logger(initialize: bool = False, log_dir: str = "logs/customer", session_id: Optional[str] = None) -> CustomerMessageLogger:
     """Get or create the customer message logger instance

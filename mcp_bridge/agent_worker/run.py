@@ -6,11 +6,23 @@ import json
 import sys
 import os
 import uuid
-from typing import Dict, Any
+from typing import Dict, Optional, Union, TypedDict, cast, Literal
 from loguru import logger
 from mcp_bridge.agent_worker.agent_worker import AgentWorker
 
-def load_config_from_file(config_file: str = "agent_worker_task.json") -> Dict[str, Any]:
+
+class ConfigDict(TypedDict, total=False):
+    """Type for configuration dictionary"""
+    task: str
+    model: str
+    system_prompt: Optional[str]
+    verbose: bool
+    max_iterations: int
+    logs_dir: str
+    session_id: str
+
+
+def load_config_from_file(config_file: str = "agent_worker_task.json") -> ConfigDict:
     """Load configuration from JSON file"""
     try:
         config_path = os.path.join(os.getcwd(), config_file)
@@ -24,14 +36,18 @@ def load_config_from_file(config_file: str = "agent_worker_task.json") -> Dict[s
         if 'task' not in config:
             raise ValueError("Missing required field 'task' in config file")
             
-        return config
+        return cast(ConfigDict, config)
     except Exception as e:
         logger.error(f"Error loading config file: {str(e)}")
         raise
 
 
-async def run_cli():
-    """Run the CLI interface for the agent worker"""
+async def run_cli() -> int:
+    """Run the CLI interface for the agent worker
+    
+    Returns:
+        Exit code (0 for success, non-zero for error)
+    """
     worker = None
     try:
         # Load configuration from file
@@ -45,7 +61,7 @@ async def run_cli():
         max_iterations = config.get('max_iterations', 10)
         
         # Configure logging
-        log_level = "DEBUG" if verbose else "INFO"
+        log_level: Union[str, int] = "DEBUG" if verbose else "INFO"
         logger.remove()
         logger.add(sys.stderr, level=log_level)
         
@@ -98,7 +114,7 @@ async def run_cli():
             await asyncio.wait(remaining_tasks, timeout=1.0)
 
 
-def main():
+def main() -> None:
     """Entry point for the CLI"""
     try:
         exit_code = asyncio.run(run_cli())
