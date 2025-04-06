@@ -160,7 +160,7 @@ async def _create_messages_bedrock(**params):
     estimated_input_tokens = 0
     for msg in params['messages']:
         if isinstance(msg.get('content', ''), str):
-            estimated_input_tokens += len(msg.get('content', '')) / 4  # Rough estimate
+            estimated_input_tokens += int(len(msg.get('content', '')) / 4)  # Rough estimate
         elif isinstance(msg.get('content', []), list):
             for content in msg.get('content', []):
                 if isinstance(content, dict) and 'text' in content:
