@@ -5,6 +5,7 @@ description = "A middleware to provide an openAI compatible endpoint that can ca
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "anthropic>=0.49.0",
     "deepmerge>=2.0",
     "fastapi>=0.115.6",
     "httpx>=0.28.1",
@@ -18,6 +19,7 @@ dependencies = [
     "sse-starlette>=2.2.0",
     "tortoise-orm[asyncmy,asyncpg]>=0.23.0",
     "uvicorn>=0.34.0",
+    "boto3>=1.37.28",
 ]
 
 [tool.uv.sources]
@@ -38,3 +40,5 @@ path = "mcp_bridge/__init__.py"
 
 [project.scripts]
 mcp-bridge = "mcp_bridge.main:run"
+bridge-agent = "mcp_bridge.agent_worker.run:main"
+

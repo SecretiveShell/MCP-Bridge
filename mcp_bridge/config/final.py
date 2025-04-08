@@ -14,6 +14,19 @@ class InferenceServer(BaseModel):
     api_key: str = Field(
         default="unauthenticated", description="API key for the inference server"
     )
+    # AWS Bedrock configuration
+    use_bedrock: bool = Field(
+        default=False, description="Use AWS Bedrock for Claude API calls"
+    )
+    aws_region: str = Field(
+        default="us-east-1", description="AWS region for Bedrock service"
+    )
+    aws_access_key_id: str = Field(
+        default="", description="AWS access key ID for Bedrock (optional, uses environment if empty)"
+    )
+    aws_secret_access_key: str = Field(
+        default="", description="AWS secret access key for Bedrock (optional, uses environment if empty)"
+    )
 
 
 class Logging(BaseModel):

@@ -166,3 +166,10 @@ cython_debug/
 commands.md
 compose.yml
 config.json
+
+screenshots/*
+.DS_Store
+
+.cursor
+agent_worker_task.json
+logs

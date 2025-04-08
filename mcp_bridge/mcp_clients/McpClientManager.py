@@ -1,4 +1,5 @@
 from typing import Union
+import os
 
 from loguru import logger
 from mcp import McpError, StdioServerParameters
@@ -6,6 +7,7 @@ from mcpx.client.transports.docker import DockerMCPServer
 
 from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
+from mcp_bridge.utils import force_exit
 
 from .DockerClient import DockerClient
 from .SseClient import SseClient
@@ -21,15 +23,18 @@ class MCPClientManager:
         """Initialize the MCP Client Manager and start all clients"""
 
         logger.log("DEBUG", "Initializing MCP Client Manager")
-
+        
         for server_name, server_config in config.mcp_servers.items():
             self.clients[server_name] = await self.construct_client(
                 server_name, server_config
             )
 
+    async def shutdown(self):
+        """Simply exit the program"""
+        force_exit(0)
+
     async def construct_client(self, name, server_config) -> client_types:
         logger.log("DEBUG", f"Constructing client for {server_config}")
-
         if isinstance(server_config, StdioServerParameters):
             client = StdioClient(name, server_config)
             await client.start()
@@ -66,7 +71,8 @@ class MCPClientManager:
                 for client_tool in list_tools.tools:
                     if client_tool.name == tool:
                         return client
-            except McpError:
+            except McpError as e:
+                logger.error(f"Error listing tools for client {name}: {e}")
                 continue
 
     async def get_client_from_prompt(self, prompt: str):
