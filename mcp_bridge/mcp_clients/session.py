@@ -26,6 +26,8 @@ class McpClientSession(
     ]
 ):
 
+
+
     def __init__(
         self,
         read_stream: MemoryObjectReceiveStream[types.JSONRPCMessage | Exception],
@@ -39,13 +41,27 @@ class McpClientSession(
             types.ServerNotification,
             read_timeout_seconds=read_timeout_seconds,
         )
+        self._read_stream = read_stream
+        # self.incoming_messages = read_stream
+        # print(f"self.incoming_messages: {self.incoming_messages}")
+        # print(f"self._incoming_messages: {self._incoming_messages}")
 
     async def __aenter__(self):
         session = await super().__aenter__()
+        if not hasattr(self, 'incoming_messages') or self.incoming_messages is None:
+            self.incoming_messages = self._read_stream
+            self._incoming_messages = self._read_stream
+            print(f"SETTING self.incoming_messages: {self.incoming_messages}")
         self._task_group.start_soon(self._consume_messages)
         return session
 
     async def _consume_messages(self):
+        # logger.info(f"Starting message consumer task for session {self.session_id}")
+        logger.info(f"McpClientSession has incoming_messages: {hasattr(self, 'incoming_messages')}")
+        if hasattr(self, 'incoming_messages') and self.incoming_messages is not None:
+            logger.info(f"incoming_messages type: {type(self.incoming_messages)}")
+        else:
+            logger.warning("incoming_messages not found or is None")
         try:
             async for message in self.incoming_messages:
                 try:

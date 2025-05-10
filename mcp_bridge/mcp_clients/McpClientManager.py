@@ -2,7 +2,7 @@ from typing import Union
 
 from loguru import logger
 from mcp import McpError, StdioServerParameters
-from mcpx.client.transports.docker import DockerMCPServer
+from mcp_bridge.config.docker import DockerMCPServer
 
 from mcp_bridge.config import config
 from mcp_bridge.config.final import SSEMCPServer
