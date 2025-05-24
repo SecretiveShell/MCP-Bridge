@@ -1,52 +1,52 @@
-from typing import Union
+import asyncio
 
 from loguru import logger
 from mcp import McpError, StdioServerParameters
 from mcpx.client.transports.docker import DockerMCPServer
 
 from mcp_bridge.config import config
-from mcp_bridge.config.final import SSEMCPServer
 
-from .DockerClient import DockerClient
-from .SseClient import SseClient
-from .StdioClient import StdioClient
-
-client_types = Union[StdioClient, SseClient, DockerClient]
-
+from mcp_bridge.mcp_clients.sessionmaker import create_session, create_session_response
 
 class MCPClientManager:
-    clients: dict[str, client_types] = {}
+    clients: dict[str, create_session_response] = {}
 
     async def initialize(self):
         """Initialize the MCP Client Manager and start all clients"""
 
         logger.log("DEBUG", "Initializing MCP Client Manager")
 
+        init_tasks = []
+
         for server_name, server_config in config.mcp_servers.items():
-            self.clients[server_name] = await self.construct_client(
-                server_name, server_config
-            )
+            logger.log("DEBUG", f"Initializing MCP client for server: {server_name}")
 
-    async def construct_client(self, name, server_config) -> client_types:
-        logger.log("DEBUG", f"Constructing client for {server_config}")
-
-        if isinstance(server_config, StdioServerParameters):
-            client = StdioClient(name, server_config)
-            await client.start()
-            return client
-
-        if isinstance(server_config, SSEMCPServer):
-            # TODO: implement sse client
-            client = SseClient(name, server_config)  # type: ignore
-            await client.start()
-            return client
+            instance = await create_session(server_name, server_config)
+            init_task = asyncio.create_task(self.init_server_instance(instance))
+            init_tasks.append(init_task)
         
-        if isinstance(server_config, DockerMCPServer):
-            client = DockerClient(name, server_config)
-            await client.start()
-            return client
+        await asyncio.gather(*init_tasks)
+        logger.log("DEBUG", "All MCP clients initialized")
 
-        raise NotImplementedError("Client Type not supported")
+    async def init_server_instance(self, session: create_session_response):
+        completed = False
+        for _ in range(3):
+            await asyncio.sleep(1)
+            try:
+                async with asyncio.timeout(5):
+                    await session.session.initialize()
+                    completed = True
+                    break
+            except asyncio.TimeoutError:
+                logger.warning(f"[{session.name}] Timeout during session init")
+            except Exception as e:
+                logger.exception(f"[{session.name}] Crash during session init: {e}")
+
+        if not completed:
+            logger.error(f"Failed to initialize session {session.name}")
+            return
+        
+        self.clients[session.name] = session
 
     def get_client(self, server_name: str):
         return self.clients[server_name]

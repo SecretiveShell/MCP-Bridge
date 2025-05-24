@@ -14,7 +14,7 @@ async def get_server_prompts(server_name: str) -> ListPromptsResult:
     if not client:
         raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
-    return await client.list_prompts()
+    return await client.session.list_prompts()
 
 
 @router.get("/{server_name}/tools")
@@ -25,7 +25,7 @@ async def get_server_tools(server_name: str) -> ListToolsResult:
     if not client:
         raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
-    return await client.list_tools()
+    return await client.session.list_tools()
 
 
 @router.get("/{server_name}/resources")
@@ -36,7 +36,7 @@ async def get_server_resources(server_name: str) -> ListResourcesResult:
     if not client:
         raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
-    return await client.list_resources()
+    return await client.session.list_resources()
 
 
 @router.get("/{server_name}/status")
@@ -47,4 +47,8 @@ async def get_server_status(server_name: str) -> McpServerStatus:
     if not client:
         raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
-    return await client.status()
+    return McpServerStatus(
+        name=server_name,
+        online=client.session is not None,
+        enabled=True, # TODO: Implement actual check for server enablement
+    )

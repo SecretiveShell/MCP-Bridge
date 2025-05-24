@@ -12,6 +12,6 @@ async def get_resources() -> dict[str, ListResourcesResult]:
     resources = {}
 
     for name, client in ClientManager.get_clients():
-        resources[name] = await client.list_resources()
+        resources[name] = await client.session.list_resources()
 
     return resources

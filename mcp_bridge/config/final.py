@@ -1,4 +1,5 @@
-from typing import Annotated, Literal, Union
+from datetime import timedelta
+from typing import Annotated, Literal, TypeAlias, Union
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel, Field
 
@@ -41,10 +42,19 @@ class Sampling(BaseModel):
 class SSEMCPServer(BaseModel):
     # TODO: expand this once I find a good definition for this
     url: str = Field(description="URL of the MCP server")
+    headers: dict[str, str] = Field(default_factory=dict, description="Headers to send to the MCP server")
 
+class StreamableHTTPServer(BaseModel):
+    url: str = Field(description="URL of the Streamable HTTP server")
+    headers: dict[str, str] = Field(default_factory=dict, description="Headers to send to the MCP server")
+    timeout: timedelta = Field(default_factory=lambda: timedelta(seconds=30), description="Timeout for the MCP server")
+    sse_read_timeout: timedelta = Field(default_factory=lambda: timedelta(seconds=60 * 5), description="Timeout for reading from the MCP server")
+    terminate_on_close: bool = Field(default=True, description="Whether to terminate the MCP server when the connection is closed")
+
+ServerTypes: TypeAlias = Union[StdioServerParameters, StreamableHTTPServer, SSEMCPServer, DockerMCPServer]
 
 MCPServer = Annotated[
-    Union[StdioServerParameters, SSEMCPServer, DockerMCPServer],
+    ServerTypes,
     Field(description="MCP server configuration"),
 ]
 

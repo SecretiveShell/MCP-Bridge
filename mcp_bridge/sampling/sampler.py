@@ -1,42 +1,51 @@
-from loguru import logger
-from mcp import SamplingMessage
-import mcp.types as types
+from typing import Any
+
 from lmos_openai_types import CreateChatCompletionResponse
+from loguru import logger
+from mcp import ClientSession, ErrorData, SamplingMessage
+import mcp.types as types
+from mcp.shared.context import RequestContext
 from mcp.types import CreateMessageRequestParams, CreateMessageResult
 
 from mcp_bridge.config import config
 from mcp_bridge.openai_clients.genericHttpxClient import get_client
 from mcp_bridge.sampling.modelSelector import find_best_model
 
+
 def make_message(x: SamplingMessage):
     if x.content.type == "text":
         return {
             "role": x.role,
-            "content": [{
-                "type": "text",
-                "text": x.content.text,
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": x.content.text,
+                }
+            ],
         }
     if x.content.type == "image":
         return {
             "role": x.role,
-            "content": [{
-                "type": "image",
-                "image_url": x.content.data,
-            }]
+            "content": [
+                {
+                    "type": "image",
+                    "image_url": x.content.data,
+                }
+            ],
         }
 
-async def handle_sampling_message(
-    message: CreateMessageRequestParams,
-) -> CreateMessageResult:
+
+async def sampling_callback(
+    context: RequestContext[ClientSession, Any], params: CreateMessageRequestParams
+) -> CreateMessageResult | ErrorData:
     """perform sampling"""
 
-    logger.debug(f"sampling message: {message.modelPreferences}")
-    
+    logger.debug(f"sampling message: {params.modelPreferences}")
+
     # select model
     model = config.sampling.models[0]
-    if message.modelPreferences is not None:
-        model = find_best_model(message.modelPreferences)
+    if params.modelPreferences is not None:
+        model = find_best_model(params.modelPreferences)
 
     logger.debug(f"selected model: {model.model}")
 
@@ -44,7 +53,7 @@ async def handle_sampling_message(
     # request = CreateChatCompletionRequest(model=model.model, messages=message.messages, stream=False)  # type: ignore
     request = {
         "model": model.model,
-        "messages": [make_message(x) for x in message.messages],
+        "messages": [make_message(x) for x in params.messages],
         "stream": False,
     }
 

@@ -13,7 +13,7 @@ async def get_prompts() -> dict[str, ListPromptsResult]:
     prompts = {}
 
     for name, client in ClientManager.get_clients():
-        prompts[name] = await client.list_prompts()
+        prompts[name] = await client.session.list_prompts()
 
     return prompts
 
@@ -26,7 +26,7 @@ async def get_prompt(prompt_name: str, args: dict[str, Any] = {}) -> GetPromptRe
     if not client:
         raise HTTPException(status_code=404, detail=f"Prompt '{prompt_name}' not found")
 
-    result = await client.get_prompt(prompt_name, arguments=args)
+    result = await client.session.get_prompt(prompt_name, arguments=args)
     if not result:
         raise HTTPException(status_code=404, detail=f"Prompt '{prompt_name}' not found")
 

@@ -13,8 +13,8 @@ services:
       - MCP_BRIDGE__CONFIG__FILE=config.json # mount the config file for this to work
       # - MCP_BRIDGE__CONFIG__HTTP_URL=http://10.88.100.170:8888/config.json
       # - MCP_BRIDGE__CONFIG__JSON=
-    # volumes:
-    #   - ./config.json:/mcp_bridge/config.json
+    volumes:
+      - ./config.json:/mcp_bridge/config.json
     restart: unless-stopped
 
   jaeger:
