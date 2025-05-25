@@ -1,29 +1,31 @@
 from typing import Any
+
 from fastapi import APIRouter, HTTPException
-from mcp_bridge.mcp_clients.McpClientManager import ClientManager
-from mcp.types import ListToolsResult, CallToolResult
+from mcp.types import CallToolResult, Tool
+from pydantic import BaseModel
+
+from mcp_bridge.mcp_clients.tools import tools
 
 router = APIRouter(prefix="/tools")
 
 
+class ListTools(BaseModel):
+    tools: list[Tool]
+
+
 @router.get("")
-async def get_tools() -> dict[str, ListToolsResult]:
+async def get_tools() -> ListTools:
     """Get all tools from all MCP clients"""
 
-    tools = {}
-
-    for name, client in ClientManager.get_clients():
-        tools[name] = await client.session.list_tools()
-
-    return tools
+    list_of_tools = await tools.get_tools()
+    return ListTools(tools=list_of_tools)
 
 
 @router.post("/{tool_name}/call")
 async def call_tool(tool_name: str, arguments: dict[str, Any] = {}) -> CallToolResult:
     """Call a tool"""
 
-    client = await ClientManager.get_client_from_tool(tool_name)
-    if not client:
+    result = await tools.call_tool(tool_name, arguments)
+    if result is None:
         raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
-
-    return await client.session.call_tool(tool_name, arguments)
+    return result
