@@ -7,6 +7,7 @@ from mcp_bridge.config import config
 from mcp_bridge.routers import secure_router, public_router
 from mcp_bridge.lifespan import lifespan
 from mcp_bridge.openapi_tags import tags_metadata
+from mcp_bridge.telemetry import setup_tracing
 
 
 def create_app() -> FastAPI:
@@ -20,6 +21,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         openapi_tags=tags_metadata,
     )
+
+    # setup tracing
+    setup_tracing(app)
 
     # show auth data
     if config.security.auth.enabled:

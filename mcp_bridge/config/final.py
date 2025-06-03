@@ -84,6 +84,22 @@ class Security(BaseModel):
     )
 
 
+class Telemetry(BaseModel):
+    """Telemetry configuration
+
+    open-telemetry is entirely local to your own infrastructure and does not send any data to any external service unless you configure it to do so
+    
+    defaults to false since we cannot assume you are actually running an open telemetry collector on your machine.
+    """
+    enabled: bool = Field(False, description="Enable telemetry")
+    service_name: str = Field(
+        default="MCP Bridge", description="Name of the service"
+    )
+    otel_endpoint: str = Field(
+        default="http://jaeger:4318/v1/traces",
+        description="Endpoint for the OTEL exporter",
+    )
+
 class Settings(BaseSettings):
     inference_server: InferenceServer = Field(
         default_factory=lambda: InferenceServer.model_construct(),
@@ -112,6 +128,11 @@ class Settings(BaseSettings):
     security: Security = Field(
         default_factory=lambda: Security.model_construct(),
         description="security config",
+    )
+
+    telemetry: Telemetry = Field(
+        default_factory=lambda: Telemetry.model_construct(),
+        description="telemetry config",
     )
 
     model_config = SettingsConfigDict(
