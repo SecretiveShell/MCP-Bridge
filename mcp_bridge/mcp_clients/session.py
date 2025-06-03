@@ -1,6 +1,7 @@
 from datetime import timedelta
 from typing import Awaitable, Callable
 
+import anyio
 from loguru import logger
 import mcp.types as types
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -10,11 +11,12 @@ from pydantic import AnyUrl
 
 from mcp_bridge import __version__ as version
 from mcp_bridge.sampling.sampler import handle_sampling_message
+# Fix the import - import the functions before using them
+from mcp_bridge.utils.message_adapter import wrap_message
 
 sampling_function_signature = Callable[
     [types.CreateMessageRequestParams], Awaitable[types.CreateMessageResult]
 ]
-
 
 class McpClientSession(
     BaseSession[
@@ -25,6 +27,8 @@ class McpClientSession(
         types.ServerNotification,
     ]
 ):
+
+
 
     def __init__(
         self,
@@ -39,29 +43,61 @@ class McpClientSession(
             types.ServerNotification,
             read_timeout_seconds=read_timeout_seconds,
         )
+        self._read_stream = read_stream
+        self.incoming_messages = read_stream
+        self._incoming_messages = read_stream
+        # self.incoming_messages = read_stream
+        # print(f"self.incoming_messages: {self.incoming_messages}")
+        # print(f"self._incoming_messages: {self._incoming_messages}")
 
     async def __aenter__(self):
         session = await super().__aenter__()
+        if not hasattr(self, 'incoming_messages') or self.incoming_messages is None:
+            self.incoming_messages = self._read_stream
+            self._incoming_messages = self._read_stream
+            logger.debug(f"SETTING self.incoming_messages: {self.incoming_messages}")
         self._task_group.start_soon(self._consume_messages)
         return session
 
     async def _consume_messages(self):
+        """
+        Process messages from the incoming message stream, with robust error handling.
+        """
+        logger.info(f"McpClientSession has incoming_messages: {hasattr(self, 'incoming_messages')}")
+        if hasattr(self, 'incoming_messages') and self.incoming_messages is not None:
+            logger.info(f"incoming_messages type: {type(self.incoming_messages)}")
+        else:
+            logger.warning("incoming_messages not found or is None")
+            return
+            
         try:
-            async for message in self.incoming_messages:
+            async for original_message in self.incoming_messages:
                 try:
+                    # Wrap the message
+                    message = wrap_message(original_message)
+                    
                     if isinstance(message, Exception):
                         logger.error(f"Received exception in message stream: {message}")
-                    elif isinstance(message, RequestResponder):                        
-                        logger.debug(f"Received request: {message.request}")                        
-                    elif isinstance(message, types.ServerNotification):
-                        if isinstance(message.root, types.LoggingMessageNotification):
+                    elif hasattr(message, 'request'):  # For RequestResponder
+                        logger.debug(f"Received request: {message.request}")
+                        try:
+                            await self._received_request(message)
+                        except Exception as req_err:
+                            logger.exception(f"Error handling request: {req_err}")
+                    elif hasattr(message, 'root'):
+                        if hasattr(message.root, 'params') and hasattr(types, 'LoggingMessageNotification') and hasattr(types, 'ServerNotification') and isinstance(message, types.ServerNotification) and isinstance(message.root, types.LoggingMessageNotification):
                             logger.debug(f"Received notification from server: {message.root.params}")                        
                         else:
                             logger.debug(f"Received notification from server: {message}")                        
                     else:
-                        logger.debug(f"Received notification: {message}")
+                        logger.debug(f"Received message: {message}")
+                except anyio.ClosedResourceError:
+                    logger.debug("Message stream closed")
+                    break
                 except Exception as e:
                     logger.exception(f"Error processing message: {e}")
+        except anyio.ClosedResourceError:
+            logger.debug("Message stream closed")
         except Exception as e:
             logger.exception(f"Message consumer task failed: {e}")
 

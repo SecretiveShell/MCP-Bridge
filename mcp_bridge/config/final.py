@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel, Field
 
 from mcp.client.stdio import StdioServerParameters
-from mcpx.client.transports.docker import DockerMCPServer
+from .docker import DockerMCPServer
 
 
 class InferenceServer(BaseModel):

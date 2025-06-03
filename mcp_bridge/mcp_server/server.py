@@ -4,6 +4,7 @@ from mcp.server.models import InitializationOptions
 from pydantic import AnyUrl
 from mcp_bridge.mcp_clients.McpClientManager import ClientManager
 from loguru import logger
+import asyncio
 
 __all__ = ["server", "options"]
 
@@ -15,26 +16,64 @@ server = Server("MCP-Bridge")
 @server.list_prompts()
 async def list_prompts() -> list[types.Prompt]:
     prompts = []
-    for name, client in ClientManager.get_clients():
-        # if client is None, then we cannot list the prompts
-        if client is None:
-            logger.error(f"Client '{name}' not found")
-            continue
+    logger.info("Aggregating prompts from all managed MCP clients concurrently.")
+    
+    active_clients = [(name, client) for name, client in ClientManager.get_clients() if client and client.session]
+    if not active_clients:
+        logger.info("No active clients to fetch prompts from.")
+        return []
 
-        client_prompts = await client.list_prompts()
-        prompts.extend(client_prompts.prompts)
+    coroutines = []
+    for name, client in active_clients:
+        logger.debug(f"Preparing to list prompts from client session: {name}")
+        coroutines.append(client.session.list_prompts())
+
+    logger.info(f"Gathering prompts from {len(coroutines)} active client sessions.")
+    results = await asyncio.gather(*coroutines, return_exceptions=True)
+
+    for i, result in enumerate(results):
+        name, client = active_clients[i] # Get corresponding client name
+        if isinstance(result, Exception):
+            logger.error(f"Error listing prompts for client '{name}': {result}", exc_info=result)
+        elif result and result.prompts:
+            logger.debug(f"Client '{name}' provided prompts: {[p.name for p in result.prompts]}")
+            prompts.extend(result.prompts)
+        else:
+            logger.debug(f"Client '{name}' provided no prompts or an empty response.")
+            
+    logger.info(f"Finished prompt aggregation. Total prompts aggregated: {len(prompts)}. Names: {[p.name for p in prompts]}")
     return prompts
 
 
 @server.list_resources()
 async def list_resources() -> list[types.Resource]:
     resources = []
-    for name, client in ClientManager.get_clients():
-        try:
-            client_resources = await client.list_resources()
-            resources.extend(client_resources.resources)
-        except Exception as e:
-            logger.error(f"Error listing resources for {name}: {e}")
+    logger.info("Aggregating resources from all managed MCP clients concurrently.")
+
+    active_clients = [(name, client) for name, client in ClientManager.get_clients() if client and client.session]
+    if not active_clients:
+        logger.info("No active clients to fetch resources from.")
+        return []
+
+    coroutines = []
+    for name, client in active_clients:
+        logger.debug(f"Preparing to list resources from client session: {name}")
+        coroutines.append(client.session.list_resources())
+
+    logger.info(f"Gathering resources from {len(coroutines)} active client sessions.")
+    results = await asyncio.gather(*coroutines, return_exceptions=True)
+
+    for i, result in enumerate(results):
+        name, client = active_clients[i] # Get corresponding client name
+        if isinstance(result, Exception):
+            logger.error(f"Error listing resources for client '{name}': {result}", exc_info=result)
+        elif result and result.resources:
+            logger.debug(f"Client '{name}' provided {len(result.resources)} resources.")
+            resources.extend(result.resources)
+        else:
+            logger.debug(f"Client '{name}' provided no resources or an empty response.")
+
+    logger.info(f"Finished resource aggregation. Total resources aggregated: {len(resources)}.")
     return resources
 
 
@@ -46,14 +85,32 @@ async def list_resource_templates() -> list[types.ResourceTemplate]:
 @server.list_tools()
 async def list_tools() -> list[types.Tool]:
     tools = []
-    for name, client in ClientManager.get_clients():
-        # if client is None, then we cannot list the tools
-        if client is None:
-            logger.error(f"Client '{name}' not found")
-            continue
+    logger.info("Aggregating tools from all managed MCP clients concurrently.")
 
-        client_tools = await client.list_tools()
-        tools.extend(client_tools.tools)
+    active_clients = [(name, client) for name, client in ClientManager.get_clients() if client and client.session]
+    if not active_clients:
+        logger.info("No active clients to fetch tools from.")
+        return []
+
+    coroutines = []
+    for name, client in active_clients:
+        logger.debug(f"Preparing to list tools from client session: {name}")
+        coroutines.append(client.session.list_tools())
+
+    logger.info(f"Gathering tools from {len(coroutines)} active client sessions.")
+    results = await asyncio.gather(*coroutines, return_exceptions=True)
+
+    for i, result in enumerate(results):
+        name, client = active_clients[i] # Get corresponding client name
+        if isinstance(result, Exception):
+            logger.error(f"Error listing tools for client '{name}': {result}", exc_info=result)
+        elif result and result.tools:
+            logger.debug(f"Client '{name}' provided tools: {[t.name for t in result.tools]}")
+            tools.extend(result.tools)
+        else:
+            logger.debug(f"Client '{name}' provided no tools or an empty response.")
+
+    logger.info(f"Finished tool aggregation. Total tools aggregated: {len(tools)}. Names: {[t.name for t in tools]}")
     return tools
 
 
@@ -71,11 +128,13 @@ async def get_prompt(name: str, args: dict[str, str] | None) -> types.GetPromptR
     # if args is None, then we should use an empty dict
     if args is None:
         args = {}
-
+    
+    logger.info(f"Getting prompt '{name}' with args '{args}' from client: {client.name if client else 'Unknown'}")
     result = await client.get_prompt(name, args)
     if result is None:
+        logger.error(f"Prompt '{name}' not found by client {client.name if client else 'Unknown'}")
         raise Exception(f"Prompt '{name}' not found")
-
+    logger.info(f"Successfully retrieved prompt '{name}'.")
     return result
 
 
@@ -112,17 +171,24 @@ async def handle_read_resource(uri: AnyUrl) -> str | bytes:
 async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    logger.info(f"Attempting to call tool '{name}' with arguments: {arguments}")
     client = await ClientManager.get_client_from_tool(name)
 
-    # if client is None, then we cannot call the tool
     if client is None:
+        logger.error(f"Tool '{name}' could not be mapped to any managed client.")
         raise Exception(f"Tool '{name}' not found")
 
-    # if arguments is None, then we should use an empty dict
     if arguments is None:
         arguments = {}
-
-    return (await client.call_tool(name, arguments)).content
+    
+    logger.info(f"Calling tool '{name}' on resolved client '{client.name}' with arguments: {arguments}")
+    try:
+        tool_result = await client.call_tool(name, arguments)
+        logger.info(f"Tool '{name}' executed successfully by client '{client.name}'. Result content items: {len(tool_result.content) if tool_result else 'None'}")
+        return tool_result.content
+    except Exception as e:
+        logger.error(f"Error calling tool '{name}' on client '{client.name}': {e}", exc_info=True)
+        raise
 
 
 # options
