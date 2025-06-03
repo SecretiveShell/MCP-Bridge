@@ -55,7 +55,7 @@ class McpClientSession(
         if not hasattr(self, 'incoming_messages') or self.incoming_messages is None:
             self.incoming_messages = self._read_stream
             self._incoming_messages = self._read_stream
-            print(f"SETTING self.incoming_messages: {self.incoming_messages}")
+            logger.debug(f"SETTING self.incoming_messages: {self.incoming_messages}")
         self._task_group.start_soon(self._consume_messages)
         return session
 
