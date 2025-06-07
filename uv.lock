@@ -585,7 +585,7 @@ requires-dist = [
     { name = "httpx-sse", specifier = ">=0.4.0" },
     { name = "lmos-openai-types", git = "https://github.com/LMOS-IO/LMOS-openai-types?rev=pydantic-gen" },
     { name = "loguru", specifier = ">=0.7.3" },
-    { name = "mcp", specifier = ">=1.2.0" },
+    { name = "mcp", specifier = ">=1.2.0,<=1.7.1" },
     { name = "mcpx", extras = ["docker"], specifier = ">=0.1.1" },
     { name = "opentelemetry-api", specifier = ">=1.33.1" },
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.33.1" },

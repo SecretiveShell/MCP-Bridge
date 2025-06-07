@@ -11,7 +11,7 @@ dependencies = [
     "httpx-sse>=0.4.0",
     "lmos-openai-types",
     "loguru>=0.7.3",
-    "mcp>=1.2.0",
+    "mcp>=1.2.0,<=1.7.1",
     "mcpx[docker]>=0.1.1",
     "opentelemetry-api>=1.33.1",
     "opentelemetry-exporter-otlp>=1.33.1",
