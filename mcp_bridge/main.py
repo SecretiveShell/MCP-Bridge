@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
@@ -57,7 +58,12 @@ app = create_app()
 
 def run():
     import uvicorn
-    uvicorn.run(app, host=config.network.host, port=config.network.port)
+    uvicorn.run(
+        app,
+        host=config.network.host,
+        port=config.network.port,
+        root_path=config.network.root_path,
+    )
 
 if __name__ == "__main__":
     run()

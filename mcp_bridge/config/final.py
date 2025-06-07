@@ -52,6 +52,7 @@ MCPServer = Annotated[
 class Network(BaseModel):
     host: str = Field("0.0.0.0", description="Host of the network")
     port: int = Field(8000, description="Port of the network")
+    root_path: str = Field("", description="FastAPI --root-path")
 
 
 class Cors(BaseModel):
