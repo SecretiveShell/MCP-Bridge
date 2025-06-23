@@ -1,4 +1,4 @@
-FROM python:3.12-bullseye
+FROM python:3.13-bullseye
 
 # install uv to run stdio clients (uvx)
 RUN pip install --no-cache-dir uv
