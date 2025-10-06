@@ -137,7 +137,7 @@ async def chat_completions(request: CreateChatCompletionRequest, http_request: R
 
                         call_id = parsed_data.choices[0].delta.tool_calls[0].id
                         call_id = call_id if call_id is not None else ""
-                        tool_call_id = id if tool_call_id == "" else tool_call_id
+                        tool_call_id = call_id if tool_call_id == "" else tool_call_id
 
                         arg = parsed_data.choices[0].delta.tool_calls[0].function.arguments
                         tool_call_json += arg if arg is not None else ""
