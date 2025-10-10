@@ -50,7 +50,7 @@ async def chat_completions(
         request.messages.append(msg)
 
         logger.debug(f"finish reason: {response.choices[0].finish_reason}")
-        if response.choices[0].finish_reason.value in ["stop", "length"]:
+        if response.choices[0].finish_reason == "length" or not response.choices[0].message.tool_calls:
             logger.debug("no tool calls found")
             return response
 
