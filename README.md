@@ -3,6 +3,7 @@
 <p>
   <a href="https://discord.gg/4NVQHqNxSZ"><img alt="Discord" src="https://img.shields.io/discord/1320517159331430480?style=flat&logo=discord&color=blue"></a>
   <a href="/docs/README.md"><img alt="Static Badge" src="https://img.shields.io/badge/docs-md-blue"></a>
+<a href="https://app.fossa.com/projects/git%2Bgithub.com%2FSecretiveShell%2FMCP-Bridge?ref=badge_shield" alt="FOSSA Status"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2FSecretiveShell%2FMCP-Bridge.svg?type=shield"/></a>
   <a href="LICENSE"><img alt="Static Badge" src="https://img.shields.io/badge/License-MIT-blue?style=flat"></a>
 </p>
 
@@ -14,6 +15,9 @@ MCP-Bridge acts as a bridge between the OpenAI API and MCP (MCP) tools, allowing
 >  Looking for new maintainers to assist with the project. Reach out in the Discord or open an issue if you are interested.
 >
 >  Additionally, Open WebUI natively supports MCP (Model Context Protocol) starting in v0.6.31, so MCP-Bridge should be considered as soft deprecated now.
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FSecretiveShell%2FMCP-Bridge.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FSecretiveShell%2FMCP-Bridge?ref=badge_large)
 
 ## Overview
 MCP-Bridge is designed to facilitate the integration of MCP tools with the OpenAI API. It provides a set of endpoints that can be used to interact with MCP tools in a way that is compatible with the OpenAI API. This allows you to use any client with any MCP tool without explicit support for MCP. For example, see this example of using Open Web UI with the official MCP fetch tool. 
