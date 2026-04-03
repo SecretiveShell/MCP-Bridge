@@ -129,6 +129,84 @@ If you want to use the tools inside of [claude desktop](https://claude.ai/downlo
 
 To add new MCP servers, edit the config.json file.
 
+### MCP Server Types
+
+MCP-Bridge supports three transport types for MCP servers.
+
+**stdio** — runs a local command:
+```json
+"fetch": {
+    "command": "uvx",
+    "args": ["mcp-server-fetch"]
+}
+```
+
+**SSE** — connects to a remote server over Server-Sent Events:
+```json
+"my-server": {
+    "url": "http://example.com/sse"
+}
+```
+
+**Streamable HTTP** — connects to a remote server using the newer Streamable HTTP transport (e.g. Home Assistant). Requires `"transport": "streamable_http"`:
+```json
+"homeassistant": {
+    "url": "http://homeassistant.local:8123/api/mcp",
+    "transport": "streamable_http"
+}
+```
+
+Both SSE and Streamable HTTP support a `headers` field for passing authentication:
+```json
+"homeassistant": {
+    "url": "https://homeassistant.local:8123/api/mcp",
+    "headers": {
+        "Authorization": "Bearer <your-long-lived-access-token>"
+    },
+    "transport": "streamable_http"
+}
+```
+
+#### Self-signed certificates (Docker)
+
+If your MCP server uses a self-signed or private CA certificate, the Docker container won't trust it by default. The recommended fix is to mount your host's CA bundle (which should already include your custom cert after running `update-ca-certificates`) and point Python's SSL to it:
+
+**1. Add the volume mount and environment variable to `compose.yml`:**
+```yaml
+services:
+  mcp-bridge:
+    environment:
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+    volumes:
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+```
+
+**2. Use `ssl_verify` in `config.json` to explicitly point to the bundle:**
+```json
+"homeassistant": {
+    "url": "https://homeassistant.local:8123/api/mcp",
+    "headers": {
+        "Authorization": "Bearer <your-long-lived-access-token>"
+    },
+    "ssl_verify": "/etc/ssl/certs/ca-certificates.crt",
+    "transport": "streamable_http"
+}
+```
+
+Make sure your CA certificate is trusted on the host first:
+```bash
+sudo cp /path/to/MyCA.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+```
+
+### Docker DNS issues
+If your tools or MCP servers (mainly ones running in docker) are having name resolution issues, you may need to hardcode DNS servers in your /etc/docker/daemon.json and restart docker.service. for example:
+```json
+{
+    "dns": ["192.168.2.2", "1.1.1.1"],
+}
+```
+
 ### API Key Authentication
 
 MCP-Bridge supports API key authentication to secure your server. To enable this feature, add something like this to your `config.json` file:

@@ -39,12 +39,21 @@ class Sampling(BaseModel):
 
 
 class SSEMCPServer(BaseModel):
-    # TODO: expand this once I find a good definition for this
     url: str = Field(description="URL of the MCP server")
+    headers: dict[str, str] = Field(default_factory=dict, description="HTTP headers to send with requests")
+    ssl_verify: bool | str = Field(default=True, description="SSL verification: True, False, or path to a CA bundle file")
+    transport: Literal["sse"] = Field(default="sse")
+
+
+class StreamableHTTPMCPServer(BaseModel):
+    url: str = Field(description="URL of the MCP server")
+    headers: dict[str, str] = Field(default_factory=dict, description="HTTP headers to send with requests")
+    ssl_verify: bool | str = Field(default=True, description="SSL verification: True, False, or path to a CA bundle file")
+    transport: Literal["streamable_http"]
 
 
 MCPServer = Annotated[
-    Union[StdioServerParameters, SSEMCPServer, DockerMCPServer],
+    Union[StdioServerParameters, SSEMCPServer, StreamableHTTPMCPServer, DockerMCPServer],
     Field(description="MCP server configuration"),
 ]
 
